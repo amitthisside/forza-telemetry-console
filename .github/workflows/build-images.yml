@@ -11,17 +11,23 @@ jobs:
     strategy:
       matrix:
         include:
-          - context: services/telemetry-ingest
+          - context: .
+            dockerfile: services/telemetry-ingest/Dockerfile
             image: telemetry-ingest
-          - context: services/telemetry-stream
+          - context: .
+            dockerfile: services/telemetry-stream/Dockerfile
             image: telemetry-stream
-          - context: services/session-service
+          - context: .
+            dockerfile: services/session-service/Dockerfile
             image: session-service
-          - context: services/analytics-service
+          - context: .
+            dockerfile: services/analytics-service/Dockerfile
             image: analytics-service
-          - context: services/device-gateway
+          - context: .
+            dockerfile: services/device-gateway/Dockerfile
             image: device-gateway
-          - context: apps/web
+          - context: .
+            dockerfile: apps/web/Dockerfile
             image: web
     steps:
       - uses: actions/checkout@v4
@@ -29,5 +35,6 @@ jobs:
       - uses: docker/build-push-action@v6
         with:
           context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
           push: false
           tags: ghcr.io/forza-telemetry-console/${{ matrix.image }}:${{ github.sha }}

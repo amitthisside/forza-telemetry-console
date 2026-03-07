@@ -1,13 +1,15 @@
 FROM python:3.12-slim
 
-ENV PYTHONDONTWRITEBYTECODE=1     PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
 
 RUN useradd --create-home --uid 10001 appuser
-WORKDIR /app
+WORKDIR /workspace
 
-COPY pyproject.toml /app/
-COPY src /app/src
-RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir .
+COPY services/session-service /workspace/services/session-service
+
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir /workspace/services/session-service
 
 USER appuser
 EXPOSE 8000
