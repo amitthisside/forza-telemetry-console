@@ -1,0 +1,47 @@
+# Forza Telemetry Console
+
+Production-oriented telemetry platform for Forza telemetry data out.
+
+## Repository Layout
+
+- `apps/web`: Main React + TypeScript operator console.
+- `apps/overlay`: Lightweight OBS-friendly overlay app.
+- `services/telemetry-ingest`: UDP ingest + Forza packet decode entry service.
+- `services/telemetry-stream`: WebSocket fanout service for live telemetry.
+- `services/session-service`: Session lifecycle and persistence APIs.
+- `services/analytics-service`: Coaching, diagnostics, and history APIs.
+- `services/device-gateway`: Optional hardware adapter runtime.
+- `packages/forza-parser`: Forza parser package and packet tests.
+- `packages/telemetry-models`: Shared typed telemetry models.
+- `packages/event-contracts`: NATS subjects and event payload contracts.
+- `packages/client-sdk`: TypeScript SDK for frontend/internal clients.
+- `infra`: Docker, Kubernetes, Helm, and ops scripts.
+- `docs`: Product, architecture, runbooks, API, and ADRs.
+
+## Quick Start
+
+### Prerequisites
+
+- Python 3.12+
+- Node.js 22+
+- pnpm 10+
+- Docker
+
+### Bootstrap
+
+```bash
+make bootstrap
+```
+
+### Run local stack
+
+```bash
+make up
+```
+
+## Development Standards
+
+- APIs versioned under `/api/v1`.
+- Services expose `GET /healthz`, `GET /readyz`, and `GET /metrics`.
+- Configuration is environment-driven; no hardcoded secrets.
+- Contract changes require updates to `packages/event-contracts` and docs.
