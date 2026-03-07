@@ -14,3 +14,13 @@ def test_history_summary_contract() -> None:
     response = client.get("/api/v1/history/summary")
     assert response.status_code == 200
     assert response.json()["sessions"] == 0
+
+
+def test_coaching_endpoint_emits_messages_for_signals() -> None:
+    client = TestClient(app)
+    response = client.get(
+        "/api/v1/coaching/sessions/s-1"
+        "?brake_release_variance=0.6&rear_slip_events=4&early_throttle_pct=0.7&exit_speed_delta_kmh=-8"
+    )
+    assert response.status_code == 200
+    assert len(response.json()["messages"]) >= 2
