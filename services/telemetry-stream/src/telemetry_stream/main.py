@@ -26,6 +26,7 @@ class StreamStats:
 
 
 stats = StreamStats()
+latest_frame: dict[str, object] | None = None
 stop_event = asyncio.Event()
 consumer_task: asyncio.Task[None] | None = None
 
@@ -45,9 +46,16 @@ class RecentFramesResponse(BaseModel):
     frames: list[dict[str, object]] = Field(default_factory=list)
 
 
+class OverlayStateResponse(BaseModel):
+    connected: bool
+    frame: dict[str, object] | None = None
+
+
 
 def publish_frame(frame: dict[str, object]) -> None:
+    global latest_frame
     stats.frames_ingested += 1
+    latest_frame = frame
     ring_buffer.append(frame)
     stats.frames_broadcast += hub.broadcast("telemetry", frame)
     stats.frames_broadcast += hub.broadcast("overlay", frame)
@@ -113,6 +121,14 @@ def stream_stats() -> StreamStatsResponse:
 def recent_frames(limit: int = 20) -> RecentFramesResponse:
     safe_limit = max(1, min(limit, 200))
     return RecentFramesResponse(frames=ring_buffer.recent(safe_limit))
+
+
+@api.get("/overlay/state", response_model=OverlayStateResponse)
+def overlay_state() -> OverlayStateResponse:
+    return OverlayStateResponse(
+        connected=hub.subscriber_count("overlay") > 0,
+        frame=latest_frame,
+    )
 
 
 @app.websocket("/ws/telemetry")

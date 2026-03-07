@@ -7,10 +7,10 @@ The `apps/web` frontend ships route-level views for all core PRD surfaces.
 - `/analysis`: Session analysis summary (lap count, best lap, consistency, coaching/diagnostics counters)
 - `/coaching`: Coaching suggestions view scaffold
 - `/diagnostics`: Diagnostics + replay-derived instability zones
-- `/history`: Historical sessions view scaffold
+- `/history`: Historical analytics summary (best laps, averages, trend, consistency)
 - `/devices`: Device adapter status/config view scaffold
-- `/overlay/config`: Overlay widget configuration view scaffold
-- `/overlay`: OBS-facing overlay route preview
+- `/overlay/config`: Overlay widget visibility/config (local persistence)
+- `/overlay`: OBS-facing overlay route using `/ws/overlay` low-latency feed
 
 ## Stream Source
 
@@ -37,3 +37,17 @@ The `/analysis` and `/diagnostics` routes read from both services:
 - `GET /api/v1/sessions` (`session-service` session picker source)
 - `GET /api/v1/analysis/sessions/{session_id}` (`analytics-service`)
 - `GET /api/v1/diagnostics/sessions/{session_id}` (`analytics-service`)
+
+## History Data Source
+
+The `/history` route reads:
+
+- `GET /api/v1/history/summary` (`analytics-service`)
+
+## Overlay Data Source
+
+The overlay surfaces read:
+
+- `WS /ws/overlay` (`telemetry-stream`) for low-latency state
+- `GET /api/v1/overlay/state` (`telemetry-stream`) as fallback/debug endpoint
+- browser localStorage key `forza.overlay.config.v1` for widget visibility settings
