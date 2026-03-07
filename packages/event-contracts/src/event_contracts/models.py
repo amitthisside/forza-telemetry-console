@@ -1,18 +1,18 @@
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, Field
 from telemetry_models import TelemetryFrame
 
 
-class SessionEventType(str, Enum):
+class SessionEventType(StrEnum):
     SESSION_STARTED = "session.started"
     SESSION_ENDED = "session.ended"
     LAP_STARTED = "lap.started"
     LAP_COMPLETED = "lap.completed"
 
 
-class Severity(str, Enum):
+class Severity(StrEnum):
     INFO = "info"
     LOW = "low"
     MEDIUM = "medium"
