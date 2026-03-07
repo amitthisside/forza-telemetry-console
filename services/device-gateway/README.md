@@ -1,0 +1,3 @@
+# device-gateway
+
+FastAPI service scaffold with health, readiness, and metrics endpoints.

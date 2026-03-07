@@ -1,0 +1,16 @@
+[project]
+name = "forza-parser"
+version = "0.1.0"
+description = "Forza packet parser"
+requires-python = ">=3.12"
+dependencies = ["telemetry-models>=0.1.0"]
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
