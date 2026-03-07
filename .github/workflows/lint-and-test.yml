@@ -20,7 +20,7 @@ jobs:
         with:
           version: 10
       - run: pnpm install
-      - run: pip install ruff pytest
+      - run: pip install ruff pytest httpx
       - run: pip install -e packages/telemetry-models -e packages/event-contracts -e packages/forza-parser
       - run: pip install -e services/telemetry-ingest -e services/telemetry-stream -e services/session-service -e services/analytics-service -e services/device-gateway
       - run: ruff check .
