@@ -38,9 +38,13 @@
 - `GET /metrics`
 - `GET /api/v1/ingest/stats`
 - `GET /api/v1/analysis/sessions/{session_id}`
-- `GET /api/v1/analysis/laps/{lap_id}`
+  - includes `lap_count`, `best_lap_ms`, `consistency_score`
+- `GET /api/v1/analysis/laps/{lap_id}?session_id=<optional>`
+  - includes lap trace aggregates (`frame_count`, average/best speed, avg throttle/brake)
 - `GET /api/v1/coaching/sessions/{session_id}`
+  - ranked coaching messages with `rank`, `priority_score`, `repeat_count`
 - `GET /api/v1/diagnostics/sessions/{session_id}`
+  - diagnostics list plus replay-derived instability `zones`
 - `GET /api/v1/history/summary`
 
 ## Device Gateway

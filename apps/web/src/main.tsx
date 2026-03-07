@@ -52,6 +52,19 @@ type SessionTimeline = {
   frame_count: number;
 };
 
+type SessionAnalysis = {
+  coaching_messages: number;
+  diagnostics: number;
+  lap_count: number;
+  best_lap_ms?: number | null;
+  consistency_score: number;
+};
+
+type DiagnosticsPayload = {
+  diagnostics: Array<{ diagnostic_type: string; summary: string; score: number }>;
+  zones: Array<{ zone_id: string; x: number; z: number; occurrences: number }>;
+};
+
 const emptyFrame: TelemetryFrame = {
   speed: 0,
   rpm: 0,
@@ -128,7 +141,7 @@ function useTelemetryStream() {
 }
 
 function useMapReplayData() {
-  const apiBase =
+  const sessionApiBase =
     ((import.meta.env.VITE_API_BASE_URL as string | undefined) ?? 'http://localhost:8102').replace(
       /\/$/,
       ''
@@ -148,7 +161,7 @@ function useMapReplayData() {
     let cancelled = false;
     async function loadSessions() {
       try {
-        const response = await fetch(`${apiBase}/api/v1/sessions`);
+        const response = await fetch(`${sessionApiBase}/api/v1/sessions`);
         if (!response.ok) {
           throw new Error(`sessions request failed: ${response.status}`);
         }
@@ -170,7 +183,7 @@ function useMapReplayData() {
     return () => {
       cancelled = true;
     };
-  }, [apiBase]);
+  }, [sessionApiBase]);
 
   useEffect(() => {
     if (!sessionId) {
@@ -181,8 +194,10 @@ function useMapReplayData() {
     async function loadReplayData() {
       try {
         const [timelineResp, pathResp] = await Promise.all([
-          fetch(`${apiBase}/api/v1/sessions/${sessionId}/timeline`),
-          fetch(`${apiBase}/api/v1/sessions/${sessionId}/track/path?color_by=${colorBy}&limit=4000`)
+          fetch(`${sessionApiBase}/api/v1/sessions/${sessionId}/timeline`),
+          fetch(
+            `${sessionApiBase}/api/v1/sessions/${sessionId}/track/path?color_by=${colorBy}&limit=4000`
+          )
         ]);
         if (!timelineResp.ok || !pathResp.ok) {
           throw new Error('timeline/path request failed');
@@ -206,7 +221,7 @@ function useMapReplayData() {
         const range = timelinePayload.frame_end - timelinePayload.frame_start + 1;
         const step = Math.max(1, Math.ceil(range / 2000));
         const replayResp = await fetch(
-          `${apiBase}/api/v1/sessions/${sessionId}/replay?start_frame=${timelinePayload.frame_start}&end_frame=${timelinePayload.frame_end}&step=${step}&limit=2000`
+          `${sessionApiBase}/api/v1/sessions/${sessionId}/replay?start_frame=${timelinePayload.frame_start}&end_frame=${timelinePayload.frame_end}&step=${step}&limit=2000`
         );
         if (!replayResp.ok) {
           throw new Error('replay request failed');
@@ -229,7 +244,7 @@ function useMapReplayData() {
     return () => {
       cancelled = true;
     };
-  }, [apiBase, colorBy, sessionId]);
+  }, [colorBy, sessionApiBase, sessionId]);
 
   useEffect(() => {
     if (!isPlaying || replayFrames.length < 2) {
@@ -462,23 +477,72 @@ function MapView({ frame }: { frame: TelemetryFrame }) {
 }
 
 function AnalysisView() {
+  const [analysis, setAnalysis] = useState<SessionAnalysis | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const sessionApiBase =
+    ((import.meta.env.VITE_API_BASE_URL as string | undefined) ?? 'http://localhost:8102').replace(
+      /\/$/,
+      ''
+    );
+  const analyticsApiBase = (
+    (import.meta.env.VITE_ANALYTICS_API_BASE_URL as string | undefined) ?? 'http://localhost:8103'
+  ).replace(/\/$/, '');
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      try {
+        const sessionsResponse = await fetch(`${sessionApiBase}/api/v1/sessions`);
+        if (!sessionsResponse.ok) {
+          throw new Error('sessions request failed');
+        }
+        const sessions = (await sessionsResponse.json()) as SessionSummary[];
+        if (sessions.length === 0 || cancelled) {
+          return;
+        }
+        const sessionId = sessions[0].session_id;
+        const analysisResponse = await fetch(
+          `${analyticsApiBase}/api/v1/analysis/sessions/${sessionId}`
+        );
+        if (!analysisResponse.ok) {
+          throw new Error('analysis request failed');
+        }
+        const payload = (await analysisResponse.json()) as SessionAnalysis;
+        if (!cancelled) {
+          setAnalysis(payload);
+          setError(null);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError((err as Error).message);
+        }
+      }
+    }
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [analyticsApiBase, sessionApiBase]);
+
   return (
     <section>
       <h1>Analysis</h1>
       <div className="row">
         <Card title="Lap Comparison">
           <ul className="list">
-            <li>Best lap vs current lap trace</li>
-            <li>Corner entry/exit trend markers</li>
-            <li>Brake and throttle traces</li>
+            <li>Lap count: {analysis?.lap_count ?? 0}</li>
+            <li>Best lap: {analysis?.best_lap_ms ?? '-'} ms</li>
+            <li>Consistency score: {analysis?.consistency_score?.toFixed(3) ?? '0.000'}</li>
           </ul>
         </Card>
         <Card title="Events">
           <ul className="list">
-            <li>Wheelspin events</li>
-            <li>Heavy braking markers</li>
-            <li>Instability zones</li>
+            <li>Coaching messages: {analysis?.coaching_messages ?? 0}</li>
+            <li>Diagnostics count: {analysis?.diagnostics ?? 0}</li>
+            <li>Trace stats API integration complete</li>
           </ul>
+          {error ? <p style={{ color: 'var(--danger)' }}>{error}</p> : null}
         </Card>
       </div>
     </section>
@@ -508,16 +572,77 @@ function CoachingView() {
 }
 
 function DiagnosticsView() {
+  const [payload, setPayload] = useState<DiagnosticsPayload | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const sessionApiBase =
+      ((import.meta.env.VITE_API_BASE_URL as string | undefined) ?? 'http://localhost:8102').replace(
+        /\/$/,
+        ''
+      );
+    const analyticsApiBase = (
+      (import.meta.env.VITE_ANALYTICS_API_BASE_URL as string | undefined) ?? 'http://localhost:8103'
+    ).replace(/\/$/, '');
+
+    async function load() {
+      try {
+        const sessionsResponse = await fetch(`${sessionApiBase}/api/v1/sessions`);
+        if (!sessionsResponse.ok) {
+          throw new Error('sessions request failed');
+        }
+        const sessions = (await sessionsResponse.json()) as SessionSummary[];
+        if (sessions.length === 0 || cancelled) {
+          return;
+        }
+        const response = await fetch(
+          `${analyticsApiBase}/api/v1/diagnostics/sessions/${sessions[0].session_id}`
+        );
+        if (!response.ok) {
+          throw new Error('diagnostics request failed');
+        }
+        const diagnostics = (await response.json()) as DiagnosticsPayload;
+        if (!cancelled) {
+          setPayload(diagnostics);
+          setError(null);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError((err as Error).message);
+        }
+      }
+    }
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   return (
     <section>
       <h1>Diagnostics</h1>
       <div className="row">
         <Card title="Traction & Handling">
           <ul className="list">
-            <li>Oversteer trend: monitored</li>
-            <li>Understeer trend: monitored</li>
-            <li>Instability zones: monitored</li>
+            {payload?.diagnostics?.map((item) => (
+              <li key={item.diagnostic_type}>
+                {item.diagnostic_type}: {item.summary} ({item.score.toFixed(2)})
+              </li>
+            ))}
+            {(payload?.diagnostics?.length ?? 0) === 0 ? <li>No diagnostics available.</li> : null}
           </ul>
+        </Card>
+        <Card title="Instability Zones">
+          <ul className="list">
+            {payload?.zones?.map((zone) => (
+              <li key={zone.zone_id}>
+                {zone.zone_id}: x={zone.x}, z={zone.z}, occurrences={zone.occurrences}
+              </li>
+            ))}
+            {(payload?.zones?.length ?? 0) === 0 ? <li>No zones identified yet.</li> : null}
+          </ul>
+          {error ? <p style={{ color: 'var(--danger)' }}>{error}</p> : null}
         </Card>
       </div>
     </section>

@@ -19,7 +19,12 @@
    - `http://localhost:8102/api/v1/sessions/<session_id>/timeline`
    - `http://localhost:8102/api/v1/sessions/<session_id>/track/path?color_by=speed`
    - `http://localhost:8102/api/v1/sessions/<session_id>/replay`
-7. Open frontend routes:
+7. Verify analytics APIs (replace `<session_id>` and `<lap_id>`):
+   - `http://localhost:8103/api/v1/analysis/sessions/<session_id>`
+   - `http://localhost:8103/api/v1/analysis/laps/<lap_id>?session_id=<session_id>`
+   - `http://localhost:8103/api/v1/coaching/sessions/<session_id>`
+   - `http://localhost:8103/api/v1/diagnostics/sessions/<session_id>`
+8. Open frontend routes:
    - `http://localhost:3000/`
    - `http://localhost:3000/map`
    - `http://localhost:3000/analysis`
