@@ -12,6 +12,8 @@
 - `GET /readyz`
 - `GET /metrics`
 - `GET /api/v1/streams/channels`
+- `GET /api/v1/streams/stats`
+- `GET /api/v1/streams/recent`
 - `WS /ws/telemetry`
 - `WS /ws/overlay`
 
