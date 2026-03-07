@@ -11,6 +11,10 @@ Provides retrieval and export APIs for sessions.
 - `GET /api/v1/ingest/stats`
 - `GET /api/v1/sessions`
 - `GET /api/v1/sessions/{session_id}`
+- `GET /api/v1/sessions/{session_id}/laps`
 - `GET /api/v1/sessions/{session_id}/frames`
+- `GET /api/v1/sessions/{session_id}/replay`
+- `GET /api/v1/sessions/{session_id}/track/path`
+- `GET /api/v1/sessions/{session_id}/timeline`
 - `GET /api/v1/sessions/{session_id}/export/json`
 - `GET /api/v1/sessions/{session_id}/export/csv`

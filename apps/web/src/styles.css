@@ -120,6 +120,47 @@ a {
   min-height: 150px;
 }
 
+.map-toolbar {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.map-toolbar label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.map-toolbar select {
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.map-canvas {
+  width: 100%;
+  border-radius: 10px;
+  min-height: 320px;
+}
+
+.replay-slider {
+  width: 100%;
+  margin-top: 8px;
+}
+
+.play-btn {
+  margin-top: 8px;
+  border: 1px solid var(--line);
+  background: #f4f7ff;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-weight: 600;
+}
+
 @media (max-width: 960px) {
   .layout {
     grid-template-columns: 1fr;
