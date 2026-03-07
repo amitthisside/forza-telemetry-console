@@ -25,3 +25,8 @@ and serves analysis, coaching, diagnostics, and history endpoints.
 
 `SESSION_SERVICE_BASE_URL` is used to enrich analytics responses with lap and replay data from
 `session-service`.
+
+## Metrics highlights
+
+`/metrics` includes coaching/diagnostics rule execution counters, rule error counts, replay-fetch
+errors, and history query volume.
