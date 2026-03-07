@@ -1,0 +1,15 @@
+name: helm-validate
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  helm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+      - run: helm lint infra/helm/forza-telemetry-console
+      - run: helm template forza-telemetry infra/helm/forza-telemetry-console >/tmp/rendered.yaml

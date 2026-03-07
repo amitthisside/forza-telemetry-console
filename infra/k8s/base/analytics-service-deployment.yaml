@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: analytics-service
+  namespace: forza-telemetry
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: analytics-service
+  template:
+    metadata:
+      labels:
+        app: analytics-service
+    spec:
+      containers:
+        - name: analytics-service
+          image: ghcr.io/forza-telemetry-console/analytics-service:latest
+          ports:
+            - containerPort: 8000
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: analytics-service
+  namespace: forza-telemetry
+spec:
+  selector:
+    app: analytics-service
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8000

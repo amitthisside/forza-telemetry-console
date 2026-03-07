@@ -1,0 +1,13 @@
+{
+  "name": "@forza/client-sdk",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "lint": "echo 'no-op'",
+    "test": "echo 'no-op'",
+    "build": "echo 'no-op'",
+    "format": "echo 'no-op'"
+  }
+}

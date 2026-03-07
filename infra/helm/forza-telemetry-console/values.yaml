@@ -1,0 +1,35 @@
+image:
+  registry: ghcr.io/forza-telemetry-console
+  tag: latest
+
+services:
+  telemetryIngest:
+    enabled: true
+    replicaCount: 1
+  telemetryStream:
+    enabled: true
+    replicaCount: 1
+  sessionService:
+    enabled: true
+    replicaCount: 1
+  analyticsService:
+    enabled: true
+    replicaCount: 1
+  deviceGateway:
+    enabled: false
+    replicaCount: 1
+
+postgresql:
+  enabled: true
+  auth:
+    username: forza
+    database: forza
+
+nats:
+  enabled: true
+
+redis:
+  enabled: false
+
+ingest:
+  udpExposureMode: NodePort

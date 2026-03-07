@@ -1,0 +1,35 @@
+name: build-images
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - context: services/telemetry-ingest
+            image: telemetry-ingest
+          - context: services/telemetry-stream
+            image: telemetry-stream
+          - context: services/session-service
+            image: session-service
+          - context: services/analytics-service
+            image: analytics-service
+          - context: services/device-gateway
+            image: device-gateway
+          - context: apps/web
+            image: web
+          - context: apps/overlay
+            image: overlay
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          push: false
+          tags: ghcr.io/forza-telemetry-console/${{ matrix.image }}:${{ github.sha }}
