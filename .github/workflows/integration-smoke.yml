@@ -9,9 +9,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: docker compose up -d --build
-      - run: curl -fsS http://localhost:8100/healthz
-      - run: curl -fsS http://localhost:8101/healthz
-      - run: curl -fsS http://localhost:8102/healthz
-      - run: curl -fsS http://localhost:8103/healthz
+      - name: Wait for service health checks
+        run: |
+          check() {
+            local url="$1"
+            for i in {1..30}; do
+              if curl -fsS "$url" >/dev/null; then
+                echo "healthy: $url"
+                return 0
+              fi
+              sleep 2
+            done
+            echo "unhealthy: $url"
+            return 1
+          }
+
+          check http://localhost:8100/healthz
+          check http://localhost:8101/healthz
+          check http://localhost:8102/healthz
+          check http://localhost:8103/healthz
+          check http://localhost:8104/healthz
+      - run: curl -fsS http://localhost:3000 >/dev/null
       - if: always()
         run: docker compose down -v
