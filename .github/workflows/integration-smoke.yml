@@ -1,0 +1,17 @@
+name: integration-smoke
+
+on:
+  pull_request:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose up -d --build
+      - run: curl -fsS http://localhost:8100/healthz
+      - run: curl -fsS http://localhost:8101/healthz
+      - run: curl -fsS http://localhost:8102/healthz
+      - run: curl -fsS http://localhost:8103/healthz
+      - if: always()
+        run: docker compose down -v

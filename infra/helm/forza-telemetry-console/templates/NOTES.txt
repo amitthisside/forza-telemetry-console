@@ -1,0 +1,2 @@
+Forza Telemetry Console chart installed.
+Verify pods and service health endpoints after deployment.

@@ -1,0 +1,7 @@
+resources:
+  - namespace.yaml
+  - telemetry-ingest-deployment.yaml
+  - telemetry-stream-deployment.yaml
+  - session-service-deployment.yaml
+  - analytics-service-deployment.yaml
+  - device-gateway-deployment.yaml
