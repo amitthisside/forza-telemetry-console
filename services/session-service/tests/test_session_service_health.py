@@ -25,5 +25,4 @@ def test_session_not_found() -> None:
 def test_csv_export_contract() -> None:
     with TestClient(app) as client:
         response = client.get("/api/v1/sessions/missing/export/csv")
-    assert response.status_code == 200
-    assert response.text.startswith("session_id,frame_index,received_at,speed,rpm")
+    assert response.status_code == 404

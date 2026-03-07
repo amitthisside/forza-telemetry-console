@@ -21,6 +21,37 @@ type TelemetryFrame = {
   lap_number?: number;
 };
 
+type SessionSummary = {
+  session_id: string;
+  started_at: string;
+  ended_at?: string | null;
+};
+
+type TrackPathPoint = {
+  frame_index: number;
+  lap_id?: string | null;
+  x: number;
+  y: number;
+  z: number;
+  color_value: number;
+};
+
+type ReplayFrame = {
+  frame_index: number;
+  lap_id?: string | null;
+  speed: number;
+  throttle: number;
+  brake: number;
+  position_x: number;
+  position_z: number;
+};
+
+type SessionTimeline = {
+  frame_start: number | null;
+  frame_end: number | null;
+  frame_count: number;
+};
+
 const emptyFrame: TelemetryFrame = {
   speed: 0,
   rpm: 0,
@@ -96,6 +127,144 @@ function useTelemetryStream() {
   return { connected, frame };
 }
 
+function useMapReplayData() {
+  const apiBase =
+    ((import.meta.env.VITE_API_BASE_URL as string | undefined) ?? 'http://localhost:8102').replace(
+      /\/$/,
+      ''
+    );
+
+  const [sessions, setSessions] = useState<SessionSummary[]>([]);
+  const [sessionId, setSessionId] = useState<string>('');
+  const [colorBy, setColorBy] = useState<'speed' | 'throttle' | 'brake'>('speed');
+  const [pathPoints, setPathPoints] = useState<TrackPathPoint[]>([]);
+  const [replayFrames, setReplayFrames] = useState<ReplayFrame[]>([]);
+  const [timeline, setTimeline] = useState<SessionTimeline | null>(null);
+  const [activeFrame, setActiveFrame] = useState<number>(0);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadSessions() {
+      try {
+        const response = await fetch(`${apiBase}/api/v1/sessions`);
+        if (!response.ok) {
+          throw new Error(`sessions request failed: ${response.status}`);
+        }
+        const payload = (await response.json()) as SessionSummary[];
+        if (cancelled) {
+          return;
+        }
+        setSessions(payload);
+        if (payload.length > 0) {
+          setSessionId(payload[0].session_id);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError((err as Error).message);
+        }
+      }
+    }
+    void loadSessions();
+    return () => {
+      cancelled = true;
+    };
+  }, [apiBase]);
+
+  useEffect(() => {
+    if (!sessionId) {
+      return;
+    }
+    let cancelled = false;
+
+    async function loadReplayData() {
+      try {
+        const [timelineResp, pathResp] = await Promise.all([
+          fetch(`${apiBase}/api/v1/sessions/${sessionId}/timeline`),
+          fetch(`${apiBase}/api/v1/sessions/${sessionId}/track/path?color_by=${colorBy}&limit=4000`)
+        ]);
+        if (!timelineResp.ok || !pathResp.ok) {
+          throw new Error('timeline/path request failed');
+        }
+
+        const timelinePayload = (await timelineResp.json()) as SessionTimeline;
+        const pathPayload = (await pathResp.json()) as { points: TrackPathPoint[] };
+        if (cancelled) {
+          return;
+        }
+
+        setTimeline(timelinePayload);
+        setPathPoints(pathPayload.points);
+
+        if (timelinePayload.frame_start === null || timelinePayload.frame_end === null) {
+          setReplayFrames([]);
+          setActiveFrame(0);
+          return;
+        }
+
+        const range = timelinePayload.frame_end - timelinePayload.frame_start + 1;
+        const step = Math.max(1, Math.ceil(range / 2000));
+        const replayResp = await fetch(
+          `${apiBase}/api/v1/sessions/${sessionId}/replay?start_frame=${timelinePayload.frame_start}&end_frame=${timelinePayload.frame_end}&step=${step}&limit=2000`
+        );
+        if (!replayResp.ok) {
+          throw new Error('replay request failed');
+        }
+        const replayPayload = (await replayResp.json()) as { frames: ReplayFrame[] };
+        if (cancelled) {
+          return;
+        }
+        setReplayFrames(replayPayload.frames);
+        setActiveFrame(timelinePayload.frame_start);
+        setError(null);
+      } catch (err) {
+        if (!cancelled) {
+          setError((err as Error).message);
+        }
+      }
+    }
+
+    void loadReplayData();
+    return () => {
+      cancelled = true;
+    };
+  }, [apiBase, colorBy, sessionId]);
+
+  useEffect(() => {
+    if (!isPlaying || replayFrames.length < 2) {
+      return;
+    }
+    const id = window.setInterval(() => {
+      setActiveFrame((prev) => {
+        const max = replayFrames[replayFrames.length - 1]?.frame_index ?? prev;
+        const min = replayFrames[0]?.frame_index ?? prev;
+        if (prev >= max) {
+          return min;
+        }
+        return prev + 1;
+      });
+    }, 120);
+    return () => window.clearInterval(id);
+  }, [isPlaying, replayFrames]);
+
+  return {
+    sessions,
+    sessionId,
+    setSessionId,
+    colorBy,
+    setColorBy,
+    pathPoints,
+    replayFrames,
+    timeline,
+    activeFrame,
+    setActiveFrame,
+    isPlaying,
+    setIsPlaying,
+    error
+  };
+}
+
 function Sidebar() {
   const location = useLocation();
   const overlayMode = location.pathname.startsWith('/overlay');
@@ -166,22 +335,125 @@ function LiveView({ frame, connected }: { frame: TelemetryFrame; connected: bool
 }
 
 function MapView({ frame }: { frame: TelemetryFrame }) {
+  const {
+    sessions,
+    sessionId,
+    setSessionId,
+    colorBy,
+    setColorBy,
+    pathPoints,
+    replayFrames,
+    timeline,
+    activeFrame,
+    setActiveFrame,
+    isPlaying,
+    setIsPlaying,
+    error
+  } = useMapReplayData();
+
+  const mappedPoints = useMemo(() => {
+    if (pathPoints.length === 0) {
+      return [];
+    }
+    const xs = pathPoints.map((p) => p.x);
+    const zs = pathPoints.map((p) => p.z);
+    const minX = Math.min(...xs);
+    const maxX = Math.max(...xs);
+    const minZ = Math.min(...zs);
+    const maxZ = Math.max(...zs);
+    const spanX = Math.max(1, maxX - minX);
+    const spanZ = Math.max(1, maxZ - minZ);
+
+    const values = pathPoints.map((p) => p.color_value);
+    const minV = Math.min(...values);
+    const maxV = Math.max(...values);
+    const spanV = Math.max(0.001, maxV - minV);
+
+    return pathPoints.map((point) => {
+      const normalized = (point.color_value - minV) / spanV;
+      const hue = 210 - Math.round(180 * normalized);
+      return {
+        ...point,
+        sx: ((point.x - minX) / spanX) * 960 + 20,
+        sy: ((point.z - minZ) / spanZ) * 520 + 20,
+        color: `hsl(${hue} 82% 48%)`
+      };
+    });
+  }, [pathPoints]);
+
+  const marker = useMemo(() => {
+    if (mappedPoints.length === 0) {
+      return null;
+    }
+    let nearest = mappedPoints[0];
+    let distance = Math.abs(nearest.frame_index - activeFrame);
+    for (const point of mappedPoints) {
+      const nextDistance = Math.abs(point.frame_index - activeFrame);
+      if (nextDistance < distance) {
+        nearest = point;
+        distance = nextDistance;
+      }
+    }
+    return nearest;
+  }, [activeFrame, mappedPoints]);
+
   return (
     <section>
       <h1>Track Map</h1>
       <div className="row">
         <Card title="Live Map Preview">
-          <p className="label">Current speed</p>
-          <div className="value">{frame.speed.toFixed(1)} km/h</div>
-          <p style={{ color: 'var(--muted)' }}>
-            Path reconstruction and color overlays are scaffolded for stream/session integration.
-          </p>
+          <div className="map-toolbar">
+            <label>
+              Session
+              <select value={sessionId} onChange={(e) => setSessionId(e.target.value)}>
+                {sessions.map((session) => (
+                  <option key={session.session_id} value={session.session_id}>
+                    {session.session_id}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Color By
+              <select
+                value={colorBy}
+                onChange={(e) => setColorBy(e.target.value as 'speed' | 'throttle' | 'brake')}
+              >
+                <option value="speed">Speed</option>
+                <option value="throttle">Throttle</option>
+                <option value="brake">Brake</option>
+              </select>
+            </label>
+          </div>
+          <svg className="map-canvas" viewBox="0 0 1000 560" role="img" aria-label="track map">
+            <rect x="0" y="0" width="1000" height="560" fill="#f7f6f3" stroke="#d9d2c6" />
+            {mappedPoints.map((point) => (
+              <circle key={point.frame_index} cx={point.sx} cy={point.sy} r="2.8" fill={point.color} />
+            ))}
+            {marker ? (
+              <circle cx={marker.sx} cy={marker.sy} r="7" fill="none" stroke="black" strokeWidth="2.5" />
+            ) : null}
+          </svg>
+          {error ? <p style={{ color: 'var(--danger)' }}>{error}</p> : null}
         </Card>
         <Card title="Replay Controls">
+          <p className="label">Current speed</p>
+          <div className="value">{frame.speed.toFixed(1)} km/h</div>
+          <button className="play-btn" onClick={() => setIsPlaying((p) => !p)}>
+            {isPlaying ? 'Pause Replay' : 'Play Replay'}
+          </button>
+          <input
+            type="range"
+            min={timeline?.frame_start ?? 0}
+            max={timeline?.frame_end ?? 0}
+            value={activeFrame}
+            onChange={(e) => setActiveFrame(Number(e.target.value))}
+            className="replay-slider"
+          />
           <ul className="list">
-            <li>Frame scrubbing (planned)</li>
-            <li>Color by speed/throttle/brake (planned)</li>
-            <li>Lap segment bookmarks (planned)</li>
+            <li>Frame: {activeFrame}</li>
+            <li>Replay samples: {replayFrames.length}</li>
+            <li>Total frames: {timeline?.frame_count ?? 0}</li>
           </ul>
         </Card>
       </div>

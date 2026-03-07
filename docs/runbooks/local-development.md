@@ -14,7 +14,12 @@
    - `http://localhost:8102/api/v1/ingest/stats`
    - `http://localhost:8103/api/v1/ingest/stats`
    - `http://localhost:8104/api/v1/devices/stats`
-6. Open frontend routes:
+6. Verify replay/map APIs:
+   - `http://localhost:8102/api/v1/sessions`
+   - `http://localhost:8102/api/v1/sessions/<session_id>/timeline`
+   - `http://localhost:8102/api/v1/sessions/<session_id>/track/path?color_by=speed`
+   - `http://localhost:8102/api/v1/sessions/<session_id>/replay`
+7. Open frontend routes:
    - `http://localhost:3000/`
    - `http://localhost:3000/map`
    - `http://localhost:3000/analysis`

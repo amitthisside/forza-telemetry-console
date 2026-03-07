@@ -1,9 +1,9 @@
 # Web Routes (MVP)
 
-The `apps/web` frontend currently ships route-level scaffolding for all PRD core views.
+The `apps/web` frontend ships route-level views for all core PRD surfaces.
 
 - `/`: Live dashboard
-- `/map`: Track map view scaffold
+- `/map`: Track map with replay scrub controls and color overlays
 - `/analysis`: Lap analysis view scaffold
 - `/coaching`: Coaching suggestions view scaffold
 - `/diagnostics`: Handling/traction diagnostics view scaffold
@@ -20,3 +20,12 @@ The live dashboard attempts a WebSocket connection using:
 - fallback `ws://localhost:8101/ws/telemetry`
 
 When no stream is available, the UI switches to simulated telemetry values so routes stay functional in local development.
+
+## Map Data Source
+
+The `/map` route reads replay data from `session-service`:
+
+- `GET /api/v1/sessions`
+- `GET /api/v1/sessions/{session_id}/timeline`
+- `GET /api/v1/sessions/{session_id}/track/path?color_by=speed|throttle|brake`
+- `GET /api/v1/sessions/{session_id}/replay`
