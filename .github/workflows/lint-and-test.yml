@@ -24,6 +24,12 @@ jobs:
       - run: pip install -e packages/telemetry-models -e packages/event-contracts -e packages/forza-parser
       - run: pip install -e services/telemetry-ingest -e services/telemetry-stream -e services/session-service -e services/analytics-service -e services/device-gateway
       - run: ruff check .
-      - run: pytest
+      - run: pytest -q
+        env:
+          INGEST_NATS_ENABLED: "false"
+          STREAM_NATS_ENABLED: "false"
+          SESSION_NATS_ENABLED: "false"
+          ANALYTICS_NATS_ENABLED: "false"
+          DEVICE_NATS_ENABLED: "false"
       - run: pnpm -r lint
       - run: pnpm -r test
