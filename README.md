@@ -50,3 +50,11 @@ make up
 - Services expose `GET /healthz`, `GET /readyz`, and `GET /metrics`.
 - Configuration is environment-driven; no hardcoded secrets.
 - Contract changes require updates to `packages/event-contracts` and docs.
+
+## Event Pipeline (v1)
+
+- `telemetry-ingest` publishes `TelemetryFrameEvent` on `telemetry.frame.v1`.
+- `telemetry-stream` consumes the subject and serves `/ws/telemetry` + `/ws/overlay`.
+- `session-service` consumes and persists frame/session data for retrieval/export APIs.
+- `analytics-service` consumes and updates per-session coaching/diagnostic snapshots.
+- `device-gateway` consumes telemetry events and dispatches derived device signals through adapters.

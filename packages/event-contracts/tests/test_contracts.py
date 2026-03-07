@@ -22,6 +22,7 @@ def test_telemetry_event_envelope_contract() -> None:
     event = TelemetryFrameEvent(
         event_id="evt-1",
         published_at=datetime.now(UTC),
+        session_id="s-1",
         frame=frame,
     )
     assert event.source == "telemetry-ingest"

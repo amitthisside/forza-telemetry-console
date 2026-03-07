@@ -23,6 +23,7 @@ class TelemetryFrameEvent(BaseModel):
     event_id: str
     published_at: datetime
     source: str = "telemetry-ingest"
+    session_id: str
     frame: TelemetryFrame
 
 

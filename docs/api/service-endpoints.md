@@ -12,6 +12,8 @@
 - `GET /readyz`
 - `GET /metrics`
 - `GET /api/v1/streams/channels`
+- `GET /api/v1/streams/stats`
+- `GET /api/v1/streams/recent`
 - `WS /ws/telemetry`
 - `WS /ws/overlay`
 
@@ -19,6 +21,7 @@
 - `GET /healthz`
 - `GET /readyz`
 - `GET /metrics`
+- `GET /api/v1/ingest/stats`
 - `GET /api/v1/sessions`
 - `GET /api/v1/sessions/{session_id}`
 - `GET /api/v1/sessions/{session_id}/laps`
@@ -30,6 +33,7 @@
 - `GET /healthz`
 - `GET /readyz`
 - `GET /metrics`
+- `GET /api/v1/ingest/stats`
 - `GET /api/v1/analysis/sessions/{session_id}`
 - `GET /api/v1/analysis/laps/{lap_id}`
 - `GET /api/v1/coaching/sessions/{session_id}`
@@ -44,3 +48,5 @@
 - `POST /api/v1/devices/test`
 - `GET /api/v1/devices/status`
 - `GET /api/v1/devices/adapters`
+- `GET /api/v1/devices/events/recent`
+- `GET /api/v1/devices/stats`
