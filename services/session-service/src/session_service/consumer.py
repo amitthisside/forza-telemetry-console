@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 async def consume_telemetry_subject(
     nats_url: str,
     subject: str,
-    on_frame: Callable[[dict[str, object]], None],
+    on_event: Callable[[TelemetryFrameEvent], None],
     stop_event: asyncio.Event,
 ) -> None:
     try:
@@ -22,7 +22,7 @@ async def consume_telemetry_subject(
 
     while not stop_event.is_set():
         try:
-            nc = await nats.connect(servers=[nats_url], name="telemetry-stream")
+            nc = await nats.connect(servers=[nats_url], name="session-service")
             logger.info("Connected to NATS at %s", nats_url)
         except Exception as exc:  # pragma: no cover - network failure path
             logger.warning("NATS connect failed: %s", exc)
@@ -36,12 +36,10 @@ async def consume_telemetry_subject(
                     payload = json.loads(msg.data.decode("utf-8"))
                     event = TelemetryFrameEvent.model_validate(payload)
                 except (json.JSONDecodeError, UnicodeDecodeError, ValueError):
-                    logger.debug("Dropping non-JSON message on %s", msg.subject)
+                    logger.debug("Dropping invalid telemetry event on %s", msg.subject)
                     return
 
-                frame_payload = event.frame.model_dump(mode="json")
-                frame_payload["session_id"] = event.session_id
-                on_frame(frame_payload)
+                on_event(event)
 
             subscription = await nc.subscribe(subject, cb=_handler)
             logger.info("Subscribed to %s", subject)

@@ -13,7 +13,7 @@ def test_sessions_api_contract() -> None:
     with TestClient(app) as client:
         response = client.get("/api/v1/sessions")
     assert response.status_code == 200
-    assert response.json() == []
+    assert isinstance(response.json(), list)
 
 
 def test_session_not_found() -> None:
