@@ -14,6 +14,7 @@
 - `GET /api/v1/streams/channels`
 - `GET /api/v1/streams/stats`
 - `GET /api/v1/streams/recent`
+- `GET /api/v1/overlay/state`
 - `WS /ws/telemetry`
 - `WS /ws/overlay`
 
@@ -46,6 +47,7 @@
 - `GET /api/v1/diagnostics/sessions/{session_id}`
   - diagnostics list plus replay-derived instability `zones`
 - `GET /api/v1/history/summary`
+  - includes best laps, average lap/session best, improvement trend, consistency, and session groupings
 
 ## Device Gateway
 - `GET /healthz`

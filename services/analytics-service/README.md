@@ -14,6 +14,7 @@ and serves analysis, coaching, diagnostics, and history endpoints.
 - `GET /api/v1/coaching/sessions/{session_id}`
 - `GET /api/v1/diagnostics/sessions/{session_id}`
 - `GET /api/v1/history/summary`
+  - returns session/lap historical aggregates: best laps, averages, trend, consistency, and group counts
 
 ## Configuration
 

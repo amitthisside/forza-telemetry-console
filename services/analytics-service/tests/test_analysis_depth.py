@@ -89,3 +89,47 @@ def test_diagnostics_includes_zones(monkeypatch) -> None:
     body = response.json()
     assert isinstance(body["zones"], list)
     assert len(body["zones"]) >= 1
+
+
+def test_history_summary_includes_trend_and_groupings(monkeypatch) -> None:
+    async def fake_fetch_session_index():
+        return [
+            SimpleNamespace(
+                session_id="s-1:track=spa:car=gt3",
+                started_at="2026-03-01T00:00:00Z",
+                ended_at="2026-03-01T00:20:00Z",
+            ),
+            SimpleNamespace(
+                session_id="s-2:track=spa:car=gt3",
+                started_at="2026-03-02T00:00:00Z",
+                ended_at=None,
+            ),
+        ]
+
+    async def fake_fetch_session_laps(session_id: str):
+        if session_id.startswith("s-1"):
+            return [
+                SimpleNamespace(lap_id="s-1-lap-1", lap_number=1, lap_time_ms=94000),
+                SimpleNamespace(lap_id="s-1-lap-2", lap_number=2, lap_time_ms=93000),
+            ]
+        return [
+            SimpleNamespace(lap_id="s-2-lap-1", lap_number=1, lap_time_ms=91000),
+            SimpleNamespace(lap_id="s-2-lap-2", lap_number=2, lap_time_ms=90000),
+        ]
+
+    monkeypatch.setattr("analytics_service.main.fetch_session_index", fake_fetch_session_index)
+    monkeypatch.setattr("analytics_service.main.fetch_session_laps", fake_fetch_session_laps)
+
+    client = TestClient(app)
+    response = client.get("/api/v1/history/summary")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["sessions"] == 2
+    assert body["session_count_active"] == 1
+    assert body["session_count_completed"] == 1
+    assert body["best_lap_ms"] == 90000
+    assert body["average_lap_ms"] == 92000.0
+    assert body["improvement_trend_ms"] == 3000.0
+    assert len(body["best_laps"]) == 4
+    assert body["sessions_by_track"][0]["key"] == "spa"
+    assert body["sessions_by_car"][0]["key"] == "gt3"

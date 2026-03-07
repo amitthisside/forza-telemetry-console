@@ -14,6 +14,7 @@
    - `http://localhost:8102/api/v1/ingest/stats`
    - `http://localhost:8103/api/v1/ingest/stats`
    - `http://localhost:8104/api/v1/devices/stats`
+   - `http://localhost:8101/api/v1/overlay/state`
 6. Verify replay/map APIs:
    - `http://localhost:8102/api/v1/sessions`
    - `http://localhost:8102/api/v1/sessions/<session_id>/timeline`
@@ -24,6 +25,7 @@
    - `http://localhost:8103/api/v1/analysis/laps/<lap_id>?session_id=<session_id>`
    - `http://localhost:8103/api/v1/coaching/sessions/<session_id>`
    - `http://localhost:8103/api/v1/diagnostics/sessions/<session_id>`
+   - `http://localhost:8103/api/v1/history/summary`
 8. Open frontend routes:
    - `http://localhost:3000/`
    - `http://localhost:3000/map`

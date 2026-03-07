@@ -35,3 +35,13 @@ def test_websocket_receives_connected_event() -> None:
         first = websocket.receive_json()
         assert first["type"] == "connected"
         assert first["channel"] == "telemetry"
+
+
+def test_overlay_state_contract() -> None:
+    publish_frame({"speed": 101.0, "rpm": 4500, "throttle": 0.7, "brake": 0.1})
+    client = TestClient(app)
+    response = client.get("/api/v1/overlay/state")
+    assert response.status_code == 200
+    body = response.json()
+    assert "connected" in body
+    assert body["frame"]["speed"] == 101.0

@@ -9,7 +9,7 @@ import httpx
 from event_contracts import TelemetryFrameEvent
 from fastapi import APIRouter, FastAPI, Query
 from fastapi.responses import Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from analytics_service.config import AnalyticsSettings
 from analytics_service.consumer import consume_telemetry_subject
@@ -109,6 +109,12 @@ class LapSummary(BaseModel):
     lap_time_ms: int | None = None
 
 
+class SessionIndexEntry(BaseModel):
+    session_id: str
+    started_at: str
+    ended_at: str | None = None
+
+
 class ReplayFrame(BaseModel):
     frame_index: int
     lap_id: str | None = None
@@ -138,10 +144,30 @@ class LapAnalysisResponse(BaseModel):
     avg_brake: float = 0.0
 
 
+class HistoryBestLap(BaseModel):
+    session_id: str
+    lap_id: str
+    lap_number: int
+    lap_time_ms: int
+
+
+class HistoryGroupCount(BaseModel):
+    key: str
+    sessions: int
+
+
 class HistorySummary(BaseModel):
     sessions: int
+    session_count_active: int = 0
+    session_count_completed: int = 0
     best_lap_ms: int | None = None
+    average_lap_ms: float | None = None
+    average_session_best_lap_ms: float | None = None
+    improvement_trend_ms: float | None = None
     consistency_score: float = 0.0
+    best_laps: list[HistoryBestLap] = Field(default_factory=list)
+    sessions_by_track: list[HistoryGroupCount] = Field(default_factory=list)
+    sessions_by_car: list[HistoryGroupCount] = Field(default_factory=list)
 
 
 class AnalyticsConsumerStats(BaseModel):
@@ -205,6 +231,14 @@ async def fetch_session_laps(session_id: str) -> list[LapSummary]:
     return [LapSummary.model_validate(row) for row in response.json()]
 
 
+async def fetch_session_index() -> list[SessionIndexEntry]:
+    async with httpx.AsyncClient(timeout=4.0) as client:
+        response = await client.get(f"{settings.session_service_base_url}/api/v1/sessions")
+    if response.status_code != 200:
+        return []
+    return [SessionIndexEntry.model_validate(row) for row in response.json()]
+
+
 async def fetch_session_replay(session_id: str, limit: int = 5000) -> list[ReplayFrame]:
     async with httpx.AsyncClient(timeout=6.0) as client:
         response = await client.get(
@@ -214,6 +248,14 @@ async def fetch_session_replay(session_id: str, limit: int = 5000) -> list[Repla
         return []
     payload = response.json()
     return [ReplayFrame.model_validate(frame) for frame in payload.get("frames", [])]
+
+
+def _group_from_session_id(session_id: str, marker: str) -> str | None:
+    parts = session_id.split(":")
+    for part in parts:
+        if part.startswith(marker):
+            return part.split("=", 1)[1] if "=" in part else part.removeprefix(marker)
+    return None
 
 
 def consistency_score(lap_times_ms: list[int]) -> float:
@@ -424,9 +466,85 @@ async def diagnostics_for_session(
 
 @api.get("/history/summary", response_model=HistorySummary)
 async def history_summary() -> HistorySummary:
+    session_index: list[SessionIndexEntry] = []
+    try:
+        session_index = await fetch_session_index()
+    except Exception:
+        session_index = []
+
     async with store_lock:
-        sessions = len(store.sessions)
-    return HistorySummary(sessions=sessions, best_lap_ms=None, consistency_score=0.0)
+        live_sessions = len(store.sessions)
+
+    if not session_index:
+        return HistorySummary(sessions=live_sessions, best_lap_ms=None, consistency_score=0.0)
+
+    lap_rows: list[tuple[str, LapSummary]] = []
+    for session in session_index:
+        try:
+            laps = await fetch_session_laps(session.session_id)
+        except Exception:
+            laps = []
+        lap_rows.extend((session.session_id, lap) for lap in laps if lap.lap_time_ms is not None)
+
+    lap_times = [lap.lap_time_ms for _, lap in lap_rows if lap.lap_time_ms is not None]
+    best_laps_sorted = sorted(
+        (
+            HistoryBestLap(
+                session_id=session_id,
+                lap_id=lap.lap_id,
+                lap_number=lap.lap_number,
+                lap_time_ms=int(lap.lap_time_ms),
+            )
+            for session_id, lap in lap_rows
+            if lap.lap_time_ms is not None
+        ),
+        key=lambda row: row.lap_time_ms,
+    )
+    best_laps = best_laps_sorted[:5]
+
+    per_session_best: list[int] = []
+    for session in session_index:
+        session_lap_times = [
+            lap.lap_time_ms
+            for sid, lap in lap_rows
+            if sid == session.session_id and lap.lap_time_ms is not None
+        ]
+        if session_lap_times:
+            per_session_best.append(int(min(session_lap_times)))
+
+    improvement_trend_ms: float | None = None
+    if len(per_session_best) >= 2:
+        improvement_trend_ms = round(float(per_session_best[0] - per_session_best[-1]), 3)
+
+    track_counts: dict[str, int] = {}
+    car_counts: dict[str, int] = {}
+    for session in session_index:
+        track_key = _group_from_session_id(session.session_id, "track=")
+        car_key = _group_from_session_id(session.session_id, "car=")
+        if track_key is not None:
+            track_counts[track_key] = track_counts.get(track_key, 0) + 1
+        if car_key is not None:
+            car_counts[car_key] = car_counts.get(car_key, 0) + 1
+
+    return HistorySummary(
+        sessions=len(session_index),
+        session_count_active=sum(1 for session in session_index if session.ended_at is None),
+        session_count_completed=sum(1 for session in session_index if session.ended_at is not None),
+        best_lap_ms=min(lap_times) if lap_times else None,
+        average_lap_ms=round(mean(lap_times), 3) if lap_times else None,
+        average_session_best_lap_ms=round(mean(per_session_best), 3) if per_session_best else None,
+        improvement_trend_ms=improvement_trend_ms,
+        consistency_score=consistency_score(lap_times) if lap_times else 0.0,
+        best_laps=best_laps,
+        sessions_by_track=[
+            HistoryGroupCount(key=key, sessions=count)
+            for key, count in sorted(track_counts.items(), key=lambda item: item[1], reverse=True)
+        ],
+        sessions_by_car=[
+            HistoryGroupCount(key=key, sessions=count)
+            for key, count in sorted(car_counts.items(), key=lambda item: item[1], reverse=True)
+        ],
+    )
 
 
 @api.get("/ingest/stats", response_model=AnalyticsConsumerStats)
