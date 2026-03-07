@@ -15,4 +15,12 @@ def test_parser_schema_contract() -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["schema"] == "forza-telemetry-v1"
-    assert body["minimum_packet_bytes"] == 64
+    assert body["minimum_packet_bytes"] == 232
+    assert body["supported_packet_sizes"] == [232, 311, 324]
+
+
+def test_ingest_stats_contract() -> None:
+    client = TestClient(app)
+    response = client.get("/api/v1/ingest/stats")
+    assert response.status_code == 200
+    assert response.json()["packets_received"] >= 0

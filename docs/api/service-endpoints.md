@@ -5,6 +5,7 @@
 - `GET /readyz`
 - `GET /metrics`
 - `GET /api/v1/parser/schema`
+- `GET /api/v1/ingest/stats`
 
 ## Telemetry Stream
 - `GET /healthz`
