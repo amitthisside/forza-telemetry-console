@@ -8,6 +8,7 @@ dependencies = [
   "uvicorn[standard]>=0.35,<1",
   "pydantic>=2.8,<3",
   "sqlalchemy>=2.0,<3",
+  "event-contracts>=0.1.0",
   "nats-py>=2.8,<3",
   "prometheus-client>=0.23,<1"
 ]

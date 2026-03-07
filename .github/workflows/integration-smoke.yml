@@ -30,5 +30,9 @@ jobs:
           check http://localhost:8103/healthz
           check http://localhost:8104/healthz
       - run: curl -fsS http://localhost:3000 >/dev/null
+      - if: failure()
+        run: |
+          docker compose ps
+          docker compose logs --no-color
       - if: always()
         run: docker compose down -v
