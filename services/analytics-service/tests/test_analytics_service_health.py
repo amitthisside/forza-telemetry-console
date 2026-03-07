@@ -24,3 +24,12 @@ def test_coaching_endpoint_emits_messages_for_signals() -> None:
     )
     assert response.status_code == 200
     assert len(response.json()["messages"]) >= 2
+
+
+def test_metrics_include_rule_counters() -> None:
+    client = TestClient(app)
+    response = client.get("/metrics")
+    assert response.status_code == 200
+    body = response.text
+    assert "analytics_coaching_rule_evaluations_total" in body
+    assert "analytics_rule_evaluation_errors_total" in body

@@ -18,3 +18,11 @@ Provides retrieval and export APIs for sessions.
 - `GET /api/v1/sessions/{session_id}/timeline`
 - `GET /api/v1/sessions/{session_id}/export/json`
 - `GET /api/v1/sessions/{session_id}/export/csv`
+
+## Metrics highlights
+
+`/metrics` includes:
+
+- lap boundary transition counters
+- inactive session closure counters
+- replay query count/rows and average query latency

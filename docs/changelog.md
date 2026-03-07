@@ -7,3 +7,4 @@
 - added Wave 2 major milestone: map route now renders replay path with color modes and scrub controls
 - added Wave 3 major part: enriched analysis/coaching/diagnostics APIs plus analysis/diagnostics UI integrations
 - added Wave 4 major part: historical analytics summary + overlay config persistence and low-latency overlay feed integration
+- added Wave 5 closeout: operational counters/metrics for boundary detection, replay query performance, rule execution, and adapter dispatch failures
