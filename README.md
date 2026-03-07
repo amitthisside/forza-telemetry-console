@@ -39,6 +39,11 @@ make bootstrap
 make up
 ```
 
+### Open the UI
+
+- Main console: `http://localhost:3000/`
+- Overlay route: `http://localhost:3000/overlay`
+
 ## Development Standards
 
 - APIs versioned under `/api/v1`.
