@@ -65,6 +65,30 @@ type DiagnosticsPayload = {
   zones: Array<{ zone_id: string; x: number; z: number; occurrences: number }>;
 };
 
+type HistorySummary = {
+  sessions: number;
+  session_count_active: number;
+  session_count_completed: number;
+  best_lap_ms?: number | null;
+  average_lap_ms?: number | null;
+  average_session_best_lap_ms?: number | null;
+  improvement_trend_ms?: number | null;
+  consistency_score: number;
+  best_laps: Array<{ session_id: string; lap_id: string; lap_number: number; lap_time_ms: number }>;
+  sessions_by_track: Array<{ key: string; sessions: number }>;
+  sessions_by_car: Array<{ key: string; sessions: number }>;
+};
+
+type OverlayConfig = {
+  showSpeed: boolean;
+  showGear: boolean;
+  showInputs: boolean;
+  showLap: boolean;
+  showRpmBar: boolean;
+};
+
+const OVERLAY_CONFIG_KEY = 'forza.overlay.config.v1';
+
 const emptyFrame: TelemetryFrame = {
   speed: 0,
   rpm: 0,
@@ -74,6 +98,56 @@ const emptyFrame: TelemetryFrame = {
   steering: 0,
   lap_number: 0
 };
+
+const defaultOverlayConfig: OverlayConfig = {
+  showSpeed: true,
+  showGear: true,
+  showInputs: true,
+  showLap: true,
+  showRpmBar: true
+};
+
+function readOverlayConfig(): OverlayConfig {
+  if (typeof window === 'undefined') {
+    return defaultOverlayConfig;
+  }
+  try {
+    const raw = window.localStorage.getItem(OVERLAY_CONFIG_KEY);
+    if (!raw) {
+      return defaultOverlayConfig;
+    }
+    const parsed = JSON.parse(raw) as Partial<OverlayConfig>;
+    return {
+      showSpeed: parsed.showSpeed ?? true,
+      showGear: parsed.showGear ?? true,
+      showInputs: parsed.showInputs ?? true,
+      showLap: parsed.showLap ?? true,
+      showRpmBar: parsed.showRpmBar ?? true
+    };
+  } catch {
+    return defaultOverlayConfig;
+  }
+}
+
+function useOverlayConfig() {
+  const [config, setConfig] = useState<OverlayConfig>(readOverlayConfig);
+
+  useEffect(() => {
+    window.localStorage.setItem(OVERLAY_CONFIG_KEY, JSON.stringify(config));
+  }, [config]);
+
+  useEffect(() => {
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === OVERLAY_CONFIG_KEY) {
+        setConfig(readOverlayConfig());
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
+
+  return { config, setConfig };
+}
 
 function useTelemetryStream() {
   const [connected, setConnected] = useState(false);
@@ -128,6 +202,61 @@ function useTelemetryStream() {
     } catch {
       applyMockData();
     }
+
+    return () => {
+      if (interval !== undefined) {
+        window.clearInterval(interval);
+      }
+      ws?.close();
+    };
+  }, []);
+
+  return { connected, frame };
+}
+
+function useOverlayStream() {
+  const [connected, setConnected] = useState(false);
+  const [frame, setFrame] = useState<TelemetryFrame>(emptyFrame);
+
+  useEffect(() => {
+    const telemetryWsUrl =
+      (import.meta.env.VITE_STREAM_WS_URL as string | undefined) ??
+      'ws://localhost:8101/ws/telemetry';
+    const overlayWsUrl = telemetryWsUrl.replace('/ws/telemetry', '/ws/overlay');
+
+    let interval: number | undefined;
+    const applyFallback = () => {
+      interval = window.setInterval(() => {
+        setFrame((prev) => ({
+          ...prev,
+          speed: Math.max(0, prev.speed + (Math.random() * 8 - 4)),
+          rpm: Math.max(1000, prev.rpm + (Math.random() * 600 - 300)),
+          throttle: Math.min(1, Math.max(0, prev.throttle + (Math.random() * 0.2 - 0.1))),
+          brake: Math.min(1, Math.max(0, prev.brake + (Math.random() * 0.2 - 0.1)))
+        }));
+      }, 180);
+    };
+
+    const ws = new WebSocket(overlayWsUrl);
+    ws.onopen = () => setConnected(true);
+    ws.onclose = () => {
+      setConnected(false);
+      applyFallback();
+    };
+    ws.onerror = () => {
+      setConnected(false);
+      ws?.close();
+    };
+    ws.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data) as { type?: string; data?: Partial<TelemetryFrame> };
+        if (payload.type === 'frame' && payload.data) {
+          setFrame((prev) => ({ ...prev, ...payload.data }));
+        }
+      } catch {
+        // Ignore malformed overlay payloads.
+      }
+    };
 
     return () => {
       if (interval !== undefined) {
@@ -650,15 +779,80 @@ function DiagnosticsView() {
 }
 
 function HistoryView() {
+  const [history, setHistory] = useState<HistorySummary | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const analyticsApiBase = (
+    (import.meta.env.VITE_ANALYTICS_API_BASE_URL as string | undefined) ?? 'http://localhost:8103'
+  ).replace(/\/$/, '');
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const response = await fetch(`${analyticsApiBase}/api/v1/history/summary`);
+        if (!response.ok) {
+          throw new Error('history request failed');
+        }
+        const payload = (await response.json()) as HistorySummary;
+        if (!cancelled) {
+          setHistory(payload);
+          setError(null);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError((err as Error).message);
+        }
+      }
+    }
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [analyticsApiBase]);
+
   return (
     <section>
       <h1>History</h1>
       <div className="row">
-        <Card title="Session History">
+        <Card title="Session Summary">
           <ul className="list">
-            <li>Best laps</li>
-            <li>Average lap times</li>
-            <li>Consistency score trend</li>
+            <li>Sessions: {history?.sessions ?? 0}</li>
+            <li>Active sessions: {history?.session_count_active ?? 0}</li>
+            <li>Completed sessions: {history?.session_count_completed ?? 0}</li>
+            <li>Best lap: {history?.best_lap_ms ?? '-'} ms</li>
+            <li>Avg lap: {history?.average_lap_ms ?? '-'} ms</li>
+            <li>Avg session best: {history?.average_session_best_lap_ms ?? '-'} ms</li>
+            <li>Improvement trend: {history?.improvement_trend_ms ?? '-'} ms</li>
+            <li>Consistency score: {history?.consistency_score?.toFixed(3) ?? '0.000'}</li>
+          </ul>
+          {error ? <p style={{ color: 'var(--danger)' }}>{error}</p> : null}
+        </Card>
+        <Card title="Best Laps">
+          <ul className="list">
+            {history?.best_laps?.map((lap) => (
+              <li key={lap.lap_id}>
+                {lap.session_id} · lap {lap.lap_number}: {lap.lap_time_ms} ms
+              </li>
+            ))}
+            {(history?.best_laps?.length ?? 0) === 0 ? <li>No lap data yet.</li> : null}
+          </ul>
+        </Card>
+        <Card title="Track/Car Grouping">
+          <ul className="list">
+            {history?.sessions_by_track?.map((item) => (
+              <li key={`track-${item.key}`}>
+                Track {item.key}: {item.sessions}
+              </li>
+            ))}
+            {history?.sessions_by_car?.map((item) => (
+              <li key={`car-${item.key}`}>
+                Car {item.key}: {item.sessions}
+              </li>
+            ))}
+            {(history?.sessions_by_track?.length ?? 0) + (history?.sessions_by_car?.length ?? 0) ===
+            0 ? (
+              <li>Track/car tags not available in session IDs.</li>
+            ) : null}
           </ul>
         </Card>
       </div>
@@ -684,30 +878,106 @@ function DevicesView() {
 }
 
 function OverlayConfigView() {
+  const { config, setConfig } = useOverlayConfig();
+  const toggle = (key: keyof OverlayConfig) => {
+    setConfig((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
   return (
     <section>
       <h1>Overlay Config</h1>
       <div className="row">
-        <Card title="Widget Presets">
+        <Card title="Widget Visibility">
           <ul className="list">
-            <li>Speed + gear compact</li>
-            <li>Input bars HUD</li>
-            <li>Delta + warning strip</li>
+            <li>
+              <label className="toggle">
+                <input
+                  type="checkbox"
+                  checked={config.showSpeed}
+                  onChange={() => toggle('showSpeed')}
+                />
+                Speed
+              </label>
+            </li>
+            <li>
+              <label className="toggle">
+                <input type="checkbox" checked={config.showGear} onChange={() => toggle('showGear')} />
+                Gear
+              </label>
+            </li>
+            <li>
+              <label className="toggle">
+                <input
+                  type="checkbox"
+                  checked={config.showInputs}
+                  onChange={() => toggle('showInputs')}
+                />
+                Input bars
+              </label>
+            </li>
+            <li>
+              <label className="toggle">
+                <input type="checkbox" checked={config.showLap} onChange={() => toggle('showLap')} />
+                Lap badge
+              </label>
+            </li>
+            <li>
+              <label className="toggle">
+                <input
+                  type="checkbox"
+                  checked={config.showRpmBar}
+                  onChange={() => toggle('showRpmBar')}
+                />
+                RPM bar
+              </label>
+            </li>
           </ul>
+        </Card>
+        <Card title="Persistence">
+          <p style={{ color: 'var(--muted)' }}>
+            Overlay config is persisted in browser local storage and is applied to `/overlay` in real
+            time.
+          </p>
         </Card>
       </div>
     </section>
   );
 }
 
-function OverlayLiveView({ frame }: { frame: TelemetryFrame }) {
+function OverlayLiveView() {
+  const { connected, frame } = useOverlayStream();
+  const { config } = useOverlayConfig();
   return (
     <section>
       <h1>Overlay Route</h1>
       <div className="overlay-preview">
-        <div style={{ fontSize: 12, opacity: 0.7 }}>OBS Overlay Preview</div>
-        <div style={{ fontSize: 40, fontWeight: 700 }}>{frame.speed.toFixed(0)} km/h</div>
-        <div>Gear {frame.gear} · RPM {frame.rpm.toFixed(0)}</div>
+        <div style={{ fontSize: 12, opacity: 0.7 }}>
+          OBS Overlay Preview · {connected ? 'Live feed' : 'Fallback feed'}
+        </div>
+        {config.showSpeed ? <div style={{ fontSize: 40, fontWeight: 700 }}>{frame.speed.toFixed(0)} km/h</div> : null}
+        {config.showGear ? <div>Gear {frame.gear}</div> : null}
+        {config.showLap ? <div>Lap {(frame.lap_number ?? 0).toString()}</div> : null}
+        {config.showRpmBar ? (
+          <div className="rpm-bar">
+            <span style={{ width: `${Math.max(0, Math.min(100, (frame.rpm / 9000) * 100))}%` }} />
+          </div>
+        ) : null}
+        {config.showInputs ? (
+          <div className="input-bars">
+            <div>
+              Throttle
+              <div className="input-bar">
+                <span style={{ width: `${Math.round(frame.throttle * 100)}%` }} />
+              </div>
+            </div>
+            <div>
+              Brake
+              <div className="input-bar">
+                <span style={{ width: `${Math.round(frame.brake * 100)}%` }} />
+              </div>
+            </div>
+          </div>
+        ) : null}
       </div>
     </section>
   );
@@ -749,7 +1019,7 @@ function App() {
             <Route path="/history" element={<HistoryView />} />
             <Route path="/devices" element={<DevicesView />} />
             <Route path="/overlay/config" element={<OverlayConfigView />} />
-            <Route path="/overlay" element={<OverlayLiveView frame={frameMemo} />} />
+            <Route path="/overlay" element={<OverlayLiveView />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>
