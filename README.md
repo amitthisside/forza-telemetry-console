@@ -5,7 +5,7 @@ Production-oriented telemetry platform for Forza telemetry data out.
 ## Repository Layout
 
 - `apps/web`: Main React + TypeScript operator console.
-- `apps/overlay`: Lightweight OBS-friendly overlay app.
+- `apps/web` routes include `/overlay` for OBS-friendly overlays.
 - `services/telemetry-ingest`: UDP ingest + Forza packet decode entry service.
 - `services/telemetry-stream`: WebSocket fanout service for live telemetry.
 - `services/session-service`: Session lifecycle and persistence APIs.

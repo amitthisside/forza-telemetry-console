@@ -10,8 +10,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: aquasecurity/trivy-action@0.28.0
-        with:
-          scan-type: fs
-          format: table
-          exit-code: "0"
+      - name: Run Trivy filesystem scan
+        run: |
+          docker run --rm \
+            -v "${PWD}:/work" \
+            aquasec/trivy:0.63.0 \
+            fs --format table --exit-code 0 /work

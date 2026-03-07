@@ -3,7 +3,7 @@ name = "event-contracts"
 version = "0.1.0"
 description = "Event contracts and NATS subjects"
 requires-python = ">=3.12"
-dependencies = ["pydantic>=2.8,<3"]
+dependencies = ["pydantic>=2.8,<3", "telemetry-models>=0.1.0"]
 
 [build-system]
 requires = ["setuptools>=68", "wheel"]
