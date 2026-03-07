@@ -3,7 +3,6 @@ import logging
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from statistics import mean, pvariance
-from typing import Final
 
 import httpx
 from event_contracts import TelemetryFrameEvent
@@ -21,7 +20,6 @@ from analytics_service.rules import (
     evaluate_diagnostics,
 )
 
-METRICS_PAYLOAD: Final[str] = "# TYPE app_up gauge\napp_up 1\n"
 logger = logging.getLogger(__name__)
 settings = AnalyticsSettings.from_env()
 
@@ -96,8 +94,18 @@ class ConsumerStats:
     telemetry_events_rejected: int = 0
 
 
+@dataclass
+class AnalyticsOpsStats:
+    coaching_rule_evaluations: int = 0
+    diagnostics_rule_evaluations: int = 0
+    rule_evaluation_errors: int = 0
+    session_replay_fetch_errors: int = 0
+    history_queries: int = 0
+
+
 store = AnalyticsStore()
 consumer_stats = ConsumerStats()
+ops_stats = AnalyticsOpsStats()
 store_lock = asyncio.Lock()
 stop_event = asyncio.Event()
 consumer_task: asyncio.Task[None] | None = None
@@ -373,8 +381,20 @@ async def session_analysis(
         early_throttle_pct,
         exit_speed_delta_kmh,
     )
-    coaching = evaluate_coaching(snapshot)
-    diagnostics = evaluate_diagnostics(snapshot)
+    try:
+        coaching = evaluate_coaching(snapshot)
+        diagnostics = evaluate_diagnostics(snapshot)
+    except Exception as exc:
+        ops_stats.rule_evaluation_errors += 1
+        logger.warning(
+            "analytics_rule_eval_failed endpoint=session_analysis session_id=%s error=%s",
+            session_id,
+            exc,
+        )
+        coaching = []
+        diagnostics = []
+    ops_stats.coaching_rule_evaluations += 1
+    ops_stats.diagnostics_rule_evaluations += 1
 
     laps: list[LapSummary] = []
     try:
@@ -437,7 +457,17 @@ async def coaching_for_session(
         early_throttle_pct,
         exit_speed_delta_kmh,
     )
-    ranked = rank_coaching(evaluate_coaching(snapshot), snapshot)
+    try:
+        ranked = rank_coaching(evaluate_coaching(snapshot), snapshot)
+    except Exception as exc:
+        ops_stats.rule_evaluation_errors += 1
+        logger.warning(
+            "analytics_rule_eval_failed endpoint=coaching session_id=%s error=%s",
+            session_id,
+            exc,
+        )
+        ranked = []
+    ops_stats.coaching_rule_evaluations += 1
     return {"messages": ranked}
 
 
@@ -455,10 +485,21 @@ async def diagnostics_for_session(
         None,
         exit_speed_delta_kmh,
     )
-    diagnostics = evaluate_diagnostics(snapshot)
+    try:
+        diagnostics = evaluate_diagnostics(snapshot)
+    except Exception as exc:
+        ops_stats.rule_evaluation_errors += 1
+        logger.warning(
+            "analytics_rule_eval_failed endpoint=diagnostics session_id=%s error=%s",
+            session_id,
+            exc,
+        )
+        diagnostics = []
+    ops_stats.diagnostics_rule_evaluations += 1
     try:
         frames = await fetch_session_replay(session_id)
     except Exception:
+        ops_stats.session_replay_fetch_errors += 1
         frames = []
     zones = derive_diagnostic_zones(frames)
     return {"diagnostics": diagnostics, "zones": zones}
@@ -466,6 +507,7 @@ async def diagnostics_for_session(
 
 @api.get("/history/summary", response_model=HistorySummary)
 async def history_summary() -> HistorySummary:
+    ops_stats.history_queries += 1
     session_index: list[SessionIndexEntry] = []
     try:
         session_index = await fetch_session_index()
@@ -568,7 +610,26 @@ def readyz() -> dict[str, str]:
 
 @app.get("/metrics")
 def metrics() -> Response:
-    return Response(content=METRICS_PAYLOAD, media_type="text/plain; version=0.0.4")
+    payload = "\n".join(
+        [
+            "# TYPE app_up gauge",
+            "app_up 1",
+            "# TYPE analytics_coaching_rule_evaluations_total counter",
+            f"analytics_coaching_rule_evaluations_total {ops_stats.coaching_rule_evaluations}",
+            "# TYPE analytics_diagnostics_rule_evaluations_total counter",
+            (
+                "analytics_diagnostics_rule_evaluations_total "
+                f"{ops_stats.diagnostics_rule_evaluations}"
+            ),
+            "# TYPE analytics_rule_evaluation_errors_total counter",
+            f"analytics_rule_evaluation_errors_total {ops_stats.rule_evaluation_errors}",
+            "# TYPE analytics_replay_fetch_errors_total counter",
+            f"analytics_replay_fetch_errors_total {ops_stats.session_replay_fetch_errors}",
+            "# TYPE analytics_history_queries_total counter",
+            f"analytics_history_queries_total {ops_stats.history_queries}",
+        ]
+    )
+    return Response(content=f"{payload}\n", media_type="text/plain; version=0.0.4")
 
 
 app.include_router(api)

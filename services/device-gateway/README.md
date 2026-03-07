@@ -14,3 +14,7 @@ core telemetry processing.
 - `GET /api/v1/devices/events/recent`
 - `GET /api/v1/devices/stats`
 - `POST /api/v1/devices/test`
+
+## Metrics highlights
+
+`/metrics` includes event derivation totals and adapter dispatch delivery/failure counters.

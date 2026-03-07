@@ -26,3 +26,12 @@ def test_csv_export_contract() -> None:
     with TestClient(app) as client:
         response = client.get("/api/v1/sessions/missing/export/csv")
     assert response.status_code == 404
+
+
+def test_metrics_include_ops_counters() -> None:
+    with TestClient(app) as client:
+        response = client.get("/metrics")
+    assert response.status_code == 200
+    body = response.text
+    assert "session_lap_boundary_transitions_total" in body
+    assert "session_replay_queries_total" in body

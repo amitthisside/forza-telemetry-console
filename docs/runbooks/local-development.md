@@ -36,3 +36,18 @@
    - `http://localhost:3000/devices`
    - `http://localhost:3000/overlay/config`
    - `http://localhost:3000/overlay`
+
+## Troubleshooting Quick Checks
+
+- If lap/session boundaries look wrong, inspect `http://localhost:8102/metrics`:
+  - `session_lap_boundary_transitions_total`
+  - `session_inactive_closures_total`
+- If replay/history queries feel slow, inspect `http://localhost:8102/metrics`:
+  - `session_replay_queries_total`
+  - `session_replay_query_avg_ms`
+- If coaching/diagnostics volume drops unexpectedly, inspect `http://localhost:8103/metrics`:
+  - `analytics_coaching_rule_evaluations_total`
+  - `analytics_diagnostics_rule_evaluations_total`
+  - `analytics_rule_evaluation_errors_total`
+- If haptics/adapter dispatch fails, inspect `http://localhost:8104/metrics`:
+  - `device_gateway_adapter_failures_total`

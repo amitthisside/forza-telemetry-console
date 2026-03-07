@@ -3,7 +3,8 @@ import logging
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Annotated, Final, Literal
+from time import perf_counter
+from typing import Annotated, Literal
 
 from event_contracts import TelemetryFrameEvent
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query
@@ -43,7 +44,6 @@ from session_service.repository import (
     list_track_points as repo_list_track_points,
 )
 
-METRICS_PAYLOAD: Final[str] = "# TYPE app_up gauge\napp_up 1\n"
 INACTIVE_SESSION_TIMEOUT = timedelta(seconds=12)
 DbSession = Annotated[Session, Depends(get_db)]
 logger = logging.getLogger(__name__)
@@ -57,6 +57,15 @@ class ConsumerStats:
 
 
 @dataclass
+class SessionOpsStats:
+    lap_boundary_transitions: int = 0
+    inactive_session_closures: int = 0
+    replay_queries: int = 0
+    replay_query_duration_ms_total: float = 0.0
+    replay_rows_returned: int = 0
+
+
+@dataclass
 class SessionRuntimeState:
     current_lap_number: int | None = None
     current_lap_id: str | None = None
@@ -66,6 +75,7 @@ class SessionRuntimeState:
 
 
 consumer_stats = ConsumerStats()
+ops_stats = SessionOpsStats()
 runtime_states: dict[str, SessionRuntimeState] = {}
 stop_event = asyncio.Event()
 consumer_task: asyncio.Task[None] | None = None
@@ -181,9 +191,21 @@ def _resolve_lap_for_frame(
     if lap_number is not None:
         if lap_number > state.current_lap_number:
             _close_current_lap(db, state, timestamp, frame.lap_time_ms)
+            ops_stats.lap_boundary_transitions += 1
+            logger.info(
+                "lap_transition reason=lap_number_increment session_id=%s lap=%s",
+                event.session_id,
+                lap_number,
+            )
             return _start_lap(db, event.session_id, state, lap_number, timestamp)
         if lap_number < state.current_lap_number:
             _close_current_lap(db, state, timestamp, frame.lap_time_ms)
+            ops_stats.lap_boundary_transitions += 1
+            logger.info(
+                "lap_transition reason=lap_number_reset session_id=%s lap=%s",
+                event.session_id,
+                lap_number,
+            )
             return _start_lap(db, event.session_id, state, lap_number, timestamp)
 
     lap_distance_reset = (
@@ -201,6 +223,17 @@ def _resolve_lap_for_frame(
     if lap_number is None and (lap_distance_reset or race_time_reset):
         next_lap = state.current_lap_number + 1
         _close_current_lap(db, state, timestamp, frame.lap_time_ms)
+        ops_stats.lap_boundary_transitions += 1
+        logger.info(
+            (
+                "lap_transition reason=inferred_reset session_id=%s lap=%s "
+                "lap_distance_reset=%s race_time_reset=%s"
+            ),
+            event.session_id,
+            next_lap,
+            lap_distance_reset,
+            race_time_reset,
+        )
         return _start_lap(db, event.session_id, state, next_lap, timestamp)
 
     return state.current_lap_id or _start_lap(db, event.session_id, state, 1, timestamp)
@@ -217,6 +250,8 @@ def _close_inactive_sessions(db: Session, active_session_id: str, now: datetime)
             continue
         _close_current_lap(db, state, now, None)
         close_session(db, session_id, now)
+        ops_stats.inactive_session_closures += 1
+        logger.info("session_closed reason=inactive_timeout session_id=%s", session_id)
         stale_sessions.append(session_id)
 
     for session_id in stale_sessions:
@@ -333,6 +368,7 @@ def get_session_frames(
     step: int = 1,
 ) -> dict[str, list[FrameSummary]]:
     _require_session(db, session_id)
+    started = perf_counter()
     frames = repo_list_frames_window(
         db,
         session_id,
@@ -356,6 +392,9 @@ def get_session_frames(
         )
         for frame in frames
     ]
+    ops_stats.replay_queries += 1
+    ops_stats.replay_query_duration_ms_total += (perf_counter() - started) * 1000.0
+    ops_stats.replay_rows_returned += len(payload)
     return {"frames": payload}
 
 
@@ -369,6 +408,7 @@ def replay_session_frames(
     limit: int = 2000,
 ) -> SessionReplayResponse:
     _require_session(db, session_id)
+    started = perf_counter()
     frames = repo_list_frames_window(
         db,
         session_id,
@@ -377,7 +417,7 @@ def replay_session_frames(
         step=max(1, min(step, 50)),
         limit=max(1, min(limit, 5000)),
     )
-    return SessionReplayResponse(
+    payload = SessionReplayResponse(
         session_id=session_id,
         frames=[
             FrameSummary(
@@ -395,6 +435,10 @@ def replay_session_frames(
             for frame in frames
         ],
     )
+    ops_stats.replay_queries += 1
+    ops_stats.replay_query_duration_ms_total += (perf_counter() - started) * 1000.0
+    ops_stats.replay_rows_returned += len(frames)
+    return payload
 
 
 @api.get("/sessions/{session_id}/track/path", response_model=TrackPathResponse)
@@ -405,6 +449,7 @@ def track_path(
     limit: int = 5000,
 ) -> TrackPathResponse:
     _require_session(db, session_id)
+    started = perf_counter()
     rows = repo_list_track_points(db, session_id, limit=max(1, min(limit, 10000)))
 
     def color_value(frame) -> float:
@@ -414,7 +459,7 @@ def track_path(
             return frame.brake
         return frame.speed
 
-    return TrackPathResponse(
+    payload = TrackPathResponse(
         session_id=session_id,
         color_by=color_by,
         points=[
@@ -429,11 +474,16 @@ def track_path(
             for frame in rows
         ],
     )
+    ops_stats.replay_queries += 1
+    ops_stats.replay_query_duration_ms_total += (perf_counter() - started) * 1000.0
+    ops_stats.replay_rows_returned += len(rows)
+    return payload
 
 
 @api.get("/sessions/{session_id}/timeline", response_model=SessionTimeline)
 def session_timeline(session_id: str, db: DbSession) -> SessionTimeline:
     _require_session(db, session_id)
+    started = perf_counter()
     first = get_earliest_frame(db, session_id)
     last = get_latest_frame(db, session_id)
     laps = repo_list_laps(db, session_id)
@@ -442,7 +492,7 @@ def session_timeline(session_id: str, db: DbSession) -> SessionTimeline:
     frame_end = last.frame_index if last is not None else None
     frame_count = 0 if frame_start is None or frame_end is None else (frame_end - frame_start + 1)
 
-    return SessionTimeline(
+    payload = SessionTimeline(
         session_id=session_id,
         frame_start=frame_start,
         frame_end=frame_end,
@@ -460,6 +510,9 @@ def session_timeline(session_id: str, db: DbSession) -> SessionTimeline:
             for lap in laps
         ],
     )
+    ops_stats.replay_queries += 1
+    ops_stats.replay_query_duration_ms_total += (perf_counter() - started) * 1000.0
+    return payload
 
 
 @api.get("/sessions/{session_id}/export/json")
@@ -515,7 +568,28 @@ def readyz() -> dict[str, str]:
 
 @app.get("/metrics")
 def metrics() -> Response:
-    return Response(content=METRICS_PAYLOAD, media_type="text/plain; version=0.0.4")
+    replay_avg_ms = (
+        ops_stats.replay_query_duration_ms_total / ops_stats.replay_queries
+        if ops_stats.replay_queries > 0
+        else 0.0
+    )
+    payload = "\n".join(
+        [
+            "# TYPE app_up gauge",
+            "app_up 1",
+            "# TYPE session_lap_boundary_transitions_total counter",
+            f"session_lap_boundary_transitions_total {ops_stats.lap_boundary_transitions}",
+            "# TYPE session_inactive_closures_total counter",
+            f"session_inactive_closures_total {ops_stats.inactive_session_closures}",
+            "# TYPE session_replay_queries_total counter",
+            f"session_replay_queries_total {ops_stats.replay_queries}",
+            "# TYPE session_replay_rows_returned_total counter",
+            f"session_replay_rows_returned_total {ops_stats.replay_rows_returned}",
+            "# TYPE session_replay_query_avg_ms gauge",
+            f"session_replay_query_avg_ms {round(replay_avg_ms, 3)}",
+        ]
+    )
+    return Response(content=f"{payload}\n", media_type="text/plain; version=0.0.4")
 
 
 app.include_router(api)

@@ -1,9 +1,9 @@
 import asyncio
+import logging
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from itertools import count
-from typing import Final
 
 from event_contracts import TelemetryFrameEvent
 from fastapi import APIRouter, FastAPI
@@ -20,8 +20,8 @@ from device_gateway.adapters import (
 from device_gateway.config import DeviceGatewaySettings
 from device_gateway.consumer import consume_telemetry_subject
 
-METRICS_PAYLOAD: Final[str] = "# TYPE app_up gauge\napp_up 1\n"
 settings = DeviceGatewaySettings.from_env()
+logger = logging.getLogger(__name__)
 
 simulated_adapter = SimulatedAdapter(capacity=512)
 adapters = []
@@ -130,6 +130,13 @@ def process_telemetry_event(event: TelemetryFrameEvent) -> None:
         result = adapter_manager.dispatch(device_event)
         stats.adapter_deliveries += result.delivered
         stats.adapter_failures += result.failed
+        if result.failed > 0:
+            logger.warning(
+                "adapter_dispatch_failed event_id=%s session_id=%s failed=%s",
+                device_event.event_id,
+                device_event.session_id,
+                result.failed,
+            )
 
 
 @asynccontextmanager
@@ -235,7 +242,21 @@ def readyz() -> dict[str, str]:
 
 @app.get("/metrics")
 def metrics() -> Response:
-    return Response(content=METRICS_PAYLOAD, media_type="text/plain; version=0.0.4")
+    payload = "\n".join(
+        [
+            "# TYPE app_up gauge",
+            "app_up 1",
+            "# TYPE device_gateway_events_consumed_total counter",
+            f"device_gateway_events_consumed_total {stats.telemetry_events_consumed}",
+            "# TYPE device_gateway_events_derived_total counter",
+            f"device_gateway_events_derived_total {stats.device_events_derived}",
+            "# TYPE device_gateway_adapter_deliveries_total counter",
+            f"device_gateway_adapter_deliveries_total {stats.adapter_deliveries}",
+            "# TYPE device_gateway_adapter_failures_total counter",
+            f"device_gateway_adapter_failures_total {stats.adapter_failures}",
+        ]
+    )
+    return Response(content=f"{payload}\n", media_type="text/plain; version=0.0.4")
 
 
 app.include_router(api)

@@ -22,6 +22,7 @@
 - `GET /healthz`
 - `GET /readyz`
 - `GET /metrics`
+  - includes lap-boundary and replay-query operational counters
 - `GET /api/v1/ingest/stats`
 - `GET /api/v1/sessions`
 - `GET /api/v1/sessions/{session_id}`
@@ -37,6 +38,7 @@
 - `GET /healthz`
 - `GET /readyz`
 - `GET /metrics`
+  - includes coaching/diagnostics rule execution and error counters
 - `GET /api/v1/ingest/stats`
 - `GET /api/v1/analysis/sessions/{session_id}`
   - includes `lap_count`, `best_lap_ms`, `consistency_score`
@@ -53,6 +55,7 @@
 - `GET /healthz`
 - `GET /readyz`
 - `GET /metrics`
+  - includes adapter dispatch delivery/failure counters
 - `GET /api/v1/devices`
 - `POST /api/v1/devices/test`
 - `GET /api/v1/devices/status`

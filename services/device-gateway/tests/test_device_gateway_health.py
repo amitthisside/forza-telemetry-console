@@ -42,3 +42,11 @@ def test_device_event_derivation_surfaces_recent_events() -> None:
 
     recent = simulated_adapter.recent(5)
     assert len(recent) >= 1
+
+
+def test_metrics_include_adapter_dispatch_counters() -> None:
+    client = TestClient(app)
+    response = client.get("/metrics")
+    assert response.status_code == 200
+    body = response.text
+    assert "device_gateway_adapter_failures_total" in body
