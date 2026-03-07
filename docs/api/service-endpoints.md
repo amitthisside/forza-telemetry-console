@@ -48,3 +48,5 @@
 - `POST /api/v1/devices/test`
 - `GET /api/v1/devices/status`
 - `GET /api/v1/devices/adapters`
+- `GET /api/v1/devices/events/recent`
+- `GET /api/v1/devices/stats`

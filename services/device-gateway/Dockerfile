@@ -6,9 +6,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 RUN useradd --create-home --uid 10001 appuser
 WORKDIR /workspace
 
+COPY packages/telemetry-models /workspace/packages/telemetry-models
+COPY packages/event-contracts /workspace/packages/event-contracts
 COPY services/device-gateway /workspace/services/device-gateway
 
 RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir /workspace/packages/telemetry-models \
+    && pip install --no-cache-dir /workspace/packages/event-contracts \
     && pip install --no-cache-dir /workspace/services/device-gateway
 
 USER appuser

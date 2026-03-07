@@ -52,3 +52,4 @@ make up
 - `telemetry-stream` consumes the subject and serves `/ws/telemetry` + `/ws/overlay`.
 - `session-service` consumes and persists frame/session data for retrieval/export APIs.
 - `analytics-service` consumes and updates per-session coaching/diagnostic snapshots.
+- `device-gateway` consumes telemetry events and dispatches derived device signals through adapters.

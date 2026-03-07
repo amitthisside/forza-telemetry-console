@@ -19,3 +19,4 @@ The platform uses service boundaries aligned to ingest, stream fanout, persisten
 3. `telemetry-stream` consumes telemetry events and pushes frames to `/ws/telemetry` and `/ws/overlay`.
 4. `session-service` consumes telemetry events and persists sessions + frame rows.
 5. `analytics-service` consumes telemetry events, builds signal snapshots, and serves coaching/diagnostics APIs.
+6. `device-gateway` consumes telemetry events and emits adapter-friendly device signals in isolated dispatch loops.
