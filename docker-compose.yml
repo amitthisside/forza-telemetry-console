@@ -46,10 +46,5 @@ services:
     ports:
       - "3000:80"
 
-  overlay:
-    build: ./apps/overlay
-    ports:
-      - "3001:80"
-
 volumes:
   pgdata:
