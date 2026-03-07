@@ -6,7 +6,7 @@ from event_contracts import TELEMETRY_FRAME_SUBJECT
 
 @dataclass(frozen=True)
 class SessionSettings:
-    database_url: str = "sqlite:///./forza_sessions.db"
+    database_url: str = "sqlite:////tmp/forza_sessions.db"
     nats_enabled: bool = True
     nats_url: str = "nats://nats:4222"
     telemetry_subject: str = TELEMETRY_FRAME_SUBJECT
