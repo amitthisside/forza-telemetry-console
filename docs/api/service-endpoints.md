@@ -21,6 +21,7 @@
 - `GET /healthz`
 - `GET /readyz`
 - `GET /metrics`
+- `GET /api/v1/ingest/stats`
 - `GET /api/v1/sessions`
 - `GET /api/v1/sessions/{session_id}`
 - `GET /api/v1/sessions/{session_id}/laps`
@@ -32,6 +33,7 @@
 - `GET /healthz`
 - `GET /readyz`
 - `GET /metrics`
+- `GET /api/v1/ingest/stats`
 - `GET /api/v1/analysis/sessions/{session_id}`
 - `GET /api/v1/analysis/laps/{lap_id}`
 - `GET /api/v1/coaching/sessions/{session_id}`
