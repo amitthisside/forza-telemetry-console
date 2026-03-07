@@ -2,9 +2,10 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from statistics import pvariance
+from statistics import mean, pvariance
 from typing import Final
 
+import httpx
 from event_contracts import TelemetryFrameEvent
 from fastapi import APIRouter, FastAPI, Query
 from fastapi.responses import Response
@@ -102,6 +103,181 @@ stop_event = asyncio.Event()
 consumer_task: asyncio.Task[None] | None = None
 
 
+class LapSummary(BaseModel):
+    lap_id: str
+    lap_number: int
+    lap_time_ms: int | None = None
+
+
+class ReplayFrame(BaseModel):
+    frame_index: int
+    lap_id: str | None = None
+    speed: float
+    throttle: float
+    brake: float
+    position_x: float
+    position_z: float
+
+
+class AnalysisResponse(BaseModel):
+    session_id: str
+    coaching_messages: int
+    diagnostics: int
+    lap_count: int = 0
+    best_lap_ms: int | None = None
+    consistency_score: float = 0.0
+
+
+class LapAnalysisResponse(BaseModel):
+    lap_id: str
+    status: str
+    frame_count: int = 0
+    avg_speed_kmh: float = 0.0
+    best_speed_kmh: float = 0.0
+    avg_throttle: float = 0.0
+    avg_brake: float = 0.0
+
+
+class HistorySummary(BaseModel):
+    sessions: int
+    best_lap_ms: int | None = None
+    consistency_score: float = 0.0
+
+
+class AnalyticsConsumerStats(BaseModel):
+    telemetry_events_consumed: int
+    telemetry_events_rejected: int
+    nats_enabled: bool
+
+
+class CoachingPriorityMessage(BaseModel):
+    rule_id: str
+    message: str
+    severity: str
+    confidence: float
+    rank: int
+    priority_score: float
+    repeat_count: int
+
+
+class DiagnosticZone(BaseModel):
+    zone_id: str
+    x: float
+    z: float
+    occurrences: int
+
+
+def apply_overrides(
+    base: SessionSignalSnapshot,
+    brake_release_variance: float | None,
+    rear_slip_events: int | None,
+    early_throttle_pct: float | None,
+    exit_speed_delta_kmh: float | None,
+) -> SessionSignalSnapshot:
+    return SessionSignalSnapshot(
+        brake_release_variance=(
+            base.brake_release_variance
+            if brake_release_variance is None
+            else brake_release_variance
+        ),
+        rear_slip_events=base.rear_slip_events if rear_slip_events is None else rear_slip_events,
+        early_throttle_pct=(
+            base.early_throttle_pct if early_throttle_pct is None else early_throttle_pct
+        ),
+        exit_speed_delta_kmh=(
+            base.exit_speed_delta_kmh if exit_speed_delta_kmh is None else exit_speed_delta_kmh
+        ),
+    )
+
+
+async def snapshot_for_session(session_id: str) -> SessionSignalSnapshot:
+    async with store_lock:
+        return store.snapshot(session_id)
+
+
+async def fetch_session_laps(session_id: str) -> list[LapSummary]:
+    async with httpx.AsyncClient(timeout=4.0) as client:
+        response = await client.get(
+            f"{settings.session_service_base_url}/api/v1/sessions/{session_id}/laps"
+        )
+    if response.status_code != 200:
+        return []
+    return [LapSummary.model_validate(row) for row in response.json()]
+
+
+async def fetch_session_replay(session_id: str, limit: int = 5000) -> list[ReplayFrame]:
+    async with httpx.AsyncClient(timeout=6.0) as client:
+        response = await client.get(
+            f"{settings.session_service_base_url}/api/v1/sessions/{session_id}/replay?limit={limit}"
+        )
+    if response.status_code != 200:
+        return []
+    payload = response.json()
+    return [ReplayFrame.model_validate(frame) for frame in payload.get("frames", [])]
+
+
+def consistency_score(lap_times_ms: list[int]) -> float:
+    if len(lap_times_ms) <= 1:
+        return 0.0
+    avg = mean(lap_times_ms)
+    variance = pvariance(lap_times_ms)
+    stddev = variance**0.5
+    if avg <= 0:
+        return 0.0
+    score = max(0.0, 1.0 - (stddev / avg))
+    return round(min(1.0, score), 3)
+
+
+def rank_coaching(
+    messages: list[CoachingMessage],
+    snapshot: SessionSignalSnapshot,
+) -> list[CoachingPriorityMessage]:
+    severity_weight = {"high": 1.0, "medium": 0.7, "low": 0.4}
+    ranked = []
+    repeat_count = max(1, snapshot.rear_slip_events)
+    for message in messages:
+        priority = message.confidence * severity_weight.get(message.severity.value, 0.4)
+        ranked.append((priority, message))
+    ranked.sort(key=lambda item: item[0], reverse=True)
+
+    payload: list[CoachingPriorityMessage] = []
+    for index, (score, message) in enumerate(ranked, start=1):
+        payload.append(
+            CoachingPriorityMessage(
+                rule_id=message.rule_id,
+                message=message.message,
+                severity=message.severity.value,
+                confidence=message.confidence,
+                rank=index,
+                priority_score=round(score, 3),
+                repeat_count=repeat_count,
+            )
+        )
+    return payload
+
+
+def derive_diagnostic_zones(frames: list[ReplayFrame]) -> list[DiagnosticZone]:
+    if not frames:
+        return []
+    buckets: dict[str, tuple[float, float, int]] = {}
+    for frame in frames:
+        if frame.brake < 0.75 and frame.speed < 120:
+            continue
+        key = f"{round(frame.position_x / 20) * 20}:{round(frame.position_z / 20) * 20}"
+        center_x = round(frame.position_x / 20) * 20
+        center_z = round(frame.position_z / 20) * 20
+        _, _, count = buckets.get(key, (center_x, center_z, 0))
+        buckets[key] = (center_x, center_z, count + 1)
+
+    zones = [
+        DiagnosticZone(zone_id=f"zone-{idx+1}", x=x, z=z, occurrences=count)
+        for idx, (_k, (x, z, count)) in enumerate(
+            sorted(buckets.items(), key=lambda item: item[1][2], reverse=True)[:5]
+        )
+    ]
+    return zones
+
+
 async def process_telemetry_event(event: TelemetryFrameEvent) -> None:
     async with store_lock:
         store.ingest(event)
@@ -139,71 +315,6 @@ app = FastAPI(title="analytics-service", version="0.1.0", lifespan=lifespan)
 api = APIRouter(prefix="/api/v1")
 
 
-class AnalysisResponse(BaseModel):
-    session_id: str
-    coaching_messages: int
-    diagnostics: int
-
-
-class LapAnalysisResponse(BaseModel):
-    lap_id: str
-    status: str
-
-
-class HistorySummary(BaseModel):
-    sessions: int
-    best_lap_ms: int | None = None
-    consistency_score: float = 0.0
-
-
-class AnalyticsConsumerStats(BaseModel):
-    telemetry_events_consumed: int
-    telemetry_events_rejected: int
-    nats_enabled: bool
-
-
-def build_snapshot(
-    brake_release_variance: float,
-    rear_slip_events: int,
-    early_throttle_pct: float,
-    exit_speed_delta_kmh: float,
-) -> SessionSignalSnapshot:
-    return SessionSignalSnapshot(
-        brake_release_variance=brake_release_variance,
-        rear_slip_events=rear_slip_events,
-        early_throttle_pct=early_throttle_pct,
-        exit_speed_delta_kmh=exit_speed_delta_kmh,
-    )
-
-
-def apply_overrides(
-    base: SessionSignalSnapshot,
-    brake_release_variance: float | None,
-    rear_slip_events: int | None,
-    early_throttle_pct: float | None,
-    exit_speed_delta_kmh: float | None,
-) -> SessionSignalSnapshot:
-    return SessionSignalSnapshot(
-        brake_release_variance=(
-            base.brake_release_variance
-            if brake_release_variance is None
-            else brake_release_variance
-        ),
-        rear_slip_events=base.rear_slip_events if rear_slip_events is None else rear_slip_events,
-        early_throttle_pct=(
-            base.early_throttle_pct if early_throttle_pct is None else early_throttle_pct
-        ),
-        exit_speed_delta_kmh=(
-            base.exit_speed_delta_kmh if exit_speed_delta_kmh is None else exit_speed_delta_kmh
-        ),
-    )
-
-
-async def snapshot_for_session(session_id: str) -> SessionSignalSnapshot:
-    async with store_lock:
-        return store.snapshot(session_id)
-
-
 @api.get("/analysis/sessions/{session_id}", response_model=AnalysisResponse)
 async def session_analysis(
     session_id: str,
@@ -222,16 +333,50 @@ async def session_analysis(
     )
     coaching = evaluate_coaching(snapshot)
     diagnostics = evaluate_diagnostics(snapshot)
+
+    laps: list[LapSummary] = []
+    try:
+        laps = await fetch_session_laps(session_id)
+    except Exception:
+        laps = []
+
+    lap_times = [lap.lap_time_ms for lap in laps if lap.lap_time_ms is not None]
     return AnalysisResponse(
         session_id=session_id,
         coaching_messages=len(coaching),
         diagnostics=len(diagnostics),
+        lap_count=len(laps),
+        best_lap_ms=min(lap_times) if lap_times else None,
+        consistency_score=consistency_score(lap_times) if lap_times else 0.0,
     )
 
 
 @api.get("/analysis/laps/{lap_id}", response_model=LapAnalysisResponse)
-def lap_analysis(lap_id: str) -> LapAnalysisResponse:
-    return LapAnalysisResponse(lap_id=lap_id, status="not_implemented")
+async def lap_analysis(lap_id: str, session_id: str | None = None) -> LapAnalysisResponse:
+    resolved_session_id = session_id
+    if resolved_session_id is None and "-lap-" in lap_id:
+        resolved_session_id = lap_id.rsplit("-lap-", 1)[0]
+
+    if resolved_session_id is None:
+        return LapAnalysisResponse(lap_id=lap_id, status="missing_session_id")
+
+    frames = await fetch_session_replay(resolved_session_id)
+    lap_frames = [frame for frame in frames if frame.lap_id == lap_id]
+    if not lap_frames:
+        return LapAnalysisResponse(lap_id=lap_id, status="not_found")
+
+    speeds = [frame.speed for frame in lap_frames]
+    throttles = [frame.throttle for frame in lap_frames]
+    brakes = [frame.brake for frame in lap_frames]
+    return LapAnalysisResponse(
+        lap_id=lap_id,
+        status="ok",
+        frame_count=len(lap_frames),
+        avg_speed_kmh=round(mean(speeds), 3),
+        best_speed_kmh=round(max(speeds), 3),
+        avg_throttle=round(mean(throttles), 3),
+        avg_brake=round(mean(brakes), 3),
+    )
 
 
 @api.get("/coaching/sessions/{session_id}")
@@ -241,7 +386,7 @@ async def coaching_for_session(
     rear_slip_events: int | None = Query(default=None, ge=0),
     early_throttle_pct: float | None = Query(default=None, ge=0.0, le=1.0),
     exit_speed_delta_kmh: float | None = None,
-) -> dict[str, list[CoachingMessage]]:
+) -> dict[str, list[CoachingPriorityMessage]]:
     live_snapshot = await snapshot_for_session(session_id)
     snapshot = apply_overrides(
         live_snapshot,
@@ -250,7 +395,8 @@ async def coaching_for_session(
         early_throttle_pct,
         exit_speed_delta_kmh,
     )
-    return {"messages": evaluate_coaching(snapshot)}
+    ranked = rank_coaching(evaluate_coaching(snapshot), snapshot)
+    return {"messages": ranked}
 
 
 @api.get("/diagnostics/sessions/{session_id}")
@@ -258,7 +404,7 @@ async def diagnostics_for_session(
     session_id: str,
     rear_slip_events: int | None = Query(default=None, ge=0),
     exit_speed_delta_kmh: float | None = None,
-) -> dict[str, list[DiagnosticSignal]]:
+) -> dict[str, list[DiagnosticSignal] | list[DiagnosticZone]]:
     live_snapshot = await snapshot_for_session(session_id)
     snapshot = apply_overrides(
         live_snapshot,
@@ -267,7 +413,13 @@ async def diagnostics_for_session(
         None,
         exit_speed_delta_kmh,
     )
-    return {"diagnostics": evaluate_diagnostics(snapshot)}
+    diagnostics = evaluate_diagnostics(snapshot)
+    try:
+        frames = await fetch_session_replay(session_id)
+    except Exception:
+        frames = []
+    zones = derive_diagnostic_zones(frames)
+    return {"diagnostics": diagnostics, "zones": zones}
 
 
 @api.get("/history/summary", response_model=HistorySummary)
