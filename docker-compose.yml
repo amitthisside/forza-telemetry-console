@@ -11,7 +11,7 @@ services:
       POSTGRES_USER: forza
       POSTGRES_PASSWORD: forza
     ports:
-      - "5432:5432"
+      - "5434:5434"
     volumes:
       - pgdata:/var/lib/postgresql/data
 
