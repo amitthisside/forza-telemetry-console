@@ -9,3 +9,4 @@
 - added Wave 4 major part: historical analytics summary + overlay config persistence and low-latency overlay feed integration
 - added Wave 5 closeout: operational counters/metrics for boundary detection, replay query performance, rule execution, and adapter dispatch failures
 - added setup landing page (`/`) for Forza data stream IP/port entry and ingest listener visibility
+- fixed compose UDP ingress wiring to honor `INGEST_BIND_PORT`/`INGEST_BIND_HOST` from `.env`
