@@ -23,10 +23,18 @@ def _sled_packet() -> bytes:
 def _data_out_packet() -> bytes:
     packet = bytearray(311)
     struct.pack_into("<f", packet, 16, 5100.0)
-    struct.pack_into("<f", packet, 252, 123.0)
-    struct.pack_into("<f", packet, 256, 456.0)
-    struct.pack_into("<f", packet, 260, 789.0)
-    struct.pack_into("<f", packet, 264, 50.0)
+    struct.pack_into("<f", packet, 232, 123.0)
+    struct.pack_into("<f", packet, 236, 456.0)
+    struct.pack_into("<f", packet, 240, 789.0)
+    struct.pack_into("<f", packet, 244, 50.0)  # m/s
+    struct.pack_into("<f", packet, 292, 92.5)
+    struct.pack_into("<f", packet, 296, 310.25)
+    struct.pack_into("<H", packet, 300, 4)
+    struct.pack_into("<B", packet, 303, 200)
+    struct.pack_into("<B", packet, 304, 100)
+    struct.pack_into("<B", packet, 305, 30)
+    struct.pack_into("<B", packet, 307, 5)
+    struct.pack_into("<b", packet, 308, -32)
     return bytes(packet)
 
 
@@ -52,3 +60,11 @@ def test_decode_packet_extracts_data_out_speed_and_position() -> None:
     assert frame.rpm == 5100.0
     assert frame.speed == pytest.approx(180.0)
     assert frame.world_position.x == pytest.approx(123.0)
+    assert frame.lap_number == 4
+    assert frame.lap_time_ms == 92500
+    assert frame.current_race_time_ms == 310250
+    assert frame.throttle == pytest.approx(200 / 255, rel=1e-3)
+    assert frame.brake == pytest.approx(100 / 255, rel=1e-3)
+    assert frame.clutch == pytest.approx(30 / 255, rel=1e-3)
+    assert frame.gear == 5
+    assert frame.steering == pytest.approx(-32 / 127, rel=1e-3)
