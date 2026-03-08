@@ -2,7 +2,8 @@
 
 The `apps/web` frontend ships route-level views for all core PRD surfaces.
 
-- `/`: Live dashboard
+- `/`: Setup page (Forza stream IP/port + ingest listener status)
+- `/live`: Live dashboard
 - `/map`: Track map with replay scrub controls and color overlays
 - `/analysis`: Session analysis summary (lap count, best lap, consistency, coaching/diagnostics counters)
 - `/coaching`: Coaching suggestions view scaffold
@@ -18,6 +19,10 @@ The live dashboard attempts a WebSocket connection using:
 
 - `VITE_STREAM_WS_URL` if set
 - fallback `ws://localhost:8101/ws/telemetry`
+
+The setup page reads ingest listener details from:
+
+- `GET /api/v1/ingest/stats` (`telemetry-ingest`)
 
 When no stream is available, the UI switches to simulated telemetry values so routes stay functional in local development.
 

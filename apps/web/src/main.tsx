@@ -88,6 +88,18 @@ type OverlayConfig = {
 };
 
 const OVERLAY_CONFIG_KEY = 'forza.overlay.config.v1';
+const FORZA_STREAM_CONFIG_KEY = 'forza.stream.config.v1';
+
+type ForzaStreamConfig = {
+  targetIp: string;
+  targetPort: number;
+};
+
+type IngestStats = {
+  bind_host: string;
+  bind_port: number;
+  udp_enabled: boolean;
+};
 
 const emptyFrame: TelemetryFrame = {
   speed: 0,
@@ -105,6 +117,11 @@ const defaultOverlayConfig: OverlayConfig = {
   showInputs: true,
   showLap: true,
   showRpmBar: true
+};
+
+const defaultForzaStreamConfig: ForzaStreamConfig = {
+  targetIp: '127.0.0.1',
+  targetPort: 8443
 };
 
 function readOverlayConfig(): OverlayConfig {
@@ -147,6 +164,25 @@ function useOverlayConfig() {
   }, []);
 
   return { config, setConfig };
+}
+
+function readForzaStreamConfig(): ForzaStreamConfig {
+  if (typeof window === 'undefined') {
+    return defaultForzaStreamConfig;
+  }
+  try {
+    const raw = window.localStorage.getItem(FORZA_STREAM_CONFIG_KEY);
+    if (!raw) {
+      return defaultForzaStreamConfig;
+    }
+    const parsed = JSON.parse(raw) as Partial<ForzaStreamConfig>;
+    return {
+      targetIp: parsed.targetIp ?? defaultForzaStreamConfig.targetIp,
+      targetPort: parsed.targetPort ?? defaultForzaStreamConfig.targetPort
+    };
+  } catch {
+    return defaultForzaStreamConfig;
+  }
 }
 
 function useTelemetryStream() {
@@ -414,7 +450,8 @@ function Sidebar() {
   const overlayMode = location.pathname.startsWith('/overlay');
 
   const links = [
-    ['/', 'Live'],
+    ['/', 'Setup'],
+    ['/live', 'Live'],
     ['/map', 'Map'],
     ['/analysis', 'Analysis'],
     ['/coaching', 'Coaching'],
@@ -442,6 +479,97 @@ function Sidebar() {
         ))}
       </nav>
     </aside>
+  );
+}
+
+function SetupView() {
+  const ingestApiBase = (
+    (import.meta.env.VITE_INGEST_API_BASE_URL as string | undefined) ?? 'http://localhost:8100'
+  ).replace(/\/$/, '');
+  const [config, setConfig] = useState<ForzaStreamConfig>(readForzaStreamConfig);
+  const [ingestStats, setIngestStats] = useState<IngestStats | null>(null);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadIngestStats() {
+      try {
+        const response = await fetch(`${ingestApiBase}/api/v1/ingest/stats`);
+        if (!response.ok) {
+          throw new Error('ingest stats request failed');
+        }
+        const payload = (await response.json()) as IngestStats;
+        if (!cancelled) {
+          setIngestStats(payload);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError((err as Error).message);
+        }
+      }
+    }
+    void loadIngestStats();
+    return () => {
+      cancelled = true;
+    };
+  }, [ingestApiBase]);
+
+  const onSave = (event: React.FormEvent) => {
+    event.preventDefault();
+    window.localStorage.setItem(FORZA_STREAM_CONFIG_KEY, JSON.stringify(config));
+    setSaved(true);
+    window.setTimeout(() => setSaved(false), 1200);
+  };
+
+  return (
+    <section>
+      <h1>Setup</h1>
+      <div className="row">
+        <Card title="Forza Data Stream Target">
+          <form onSubmit={onSave} className="setup-form">
+            <label>
+              Data Stream IP (set this in Forza)
+              <input
+                className="setup-input"
+                value={config.targetIp}
+                onChange={(e) => setConfig((prev) => ({ ...prev, targetIp: e.target.value }))}
+                placeholder="192.168.1.10"
+              />
+            </label>
+            <label>
+              Data Stream Port (set this in Forza)
+              <input
+                className="setup-input"
+                type="number"
+                min={1}
+                max={65535}
+                value={config.targetPort}
+                onChange={(e) =>
+                  setConfig((prev) => ({ ...prev, targetPort: Number(e.target.value) || 8443 }))
+                }
+              />
+            </label>
+            <button type="submit" className="play-btn">
+              Save
+            </button>
+            {saved ? <span className="badge">Saved</span> : null}
+          </form>
+        </Card>
+        <Card title="Ingest Listener (This Machine)">
+          <ul className="list">
+            <li>
+              Host: <strong>{ingestStats?.bind_host ?? 'loading...'}</strong>
+            </li>
+            <li>
+              Port: <strong>{ingestStats?.bind_port ?? 'loading...'}</strong>
+            </li>
+            <li>Config source: `.env` with `INGEST_BIND_HOST` and `INGEST_BIND_PORT`</li>
+          </ul>
+          {error ? <p style={{ color: 'var(--danger)' }}>{error}</p> : null}
+        </Card>
+      </div>
+    </section>
   );
 }
 
@@ -1011,7 +1139,8 @@ function App() {
         <Sidebar />
         <main className="content">
           <Routes>
-            <Route path="/" element={<LiveView frame={frameMemo} connected={connected} />} />
+            <Route path="/" element={<SetupView />} />
+            <Route path="/live" element={<LiveView frame={frameMemo} connected={connected} />} />
             <Route path="/map" element={<MapView frame={frameMemo} />} />
             <Route path="/analysis" element={<AnalysisView />} />
             <Route path="/coaching" element={<CoachingView />} />

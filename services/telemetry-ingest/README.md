@@ -10,3 +10,8 @@ FastAPI service that receives Forza UDP packets, decodes them via `forza-parser`
 - `GET /metrics`
 - `GET /api/v1/parser/schema`
 - `GET /api/v1/ingest/stats`
+
+## Listener configuration
+
+- `INGEST_BIND_HOST` (default `0.0.0.0`)
+- `INGEST_BIND_PORT` (default `8443`)
