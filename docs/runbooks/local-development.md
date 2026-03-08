@@ -60,3 +60,6 @@
   - `INGEST_BIND_PORT` (default `8443`)
 - The web setup page (`/`) stores Forza target IP/port in browser localStorage key:
   - `forza.stream.config.v1`
+- Setup page health indicator logic:
+  - green: `packets_received` counter is increasing (polled every 2s)
+  - red: no recent increase or ingest API unreachable
