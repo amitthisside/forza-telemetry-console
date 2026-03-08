@@ -2,6 +2,11 @@
 
 The `apps/web` frontend ships route-level views for all core PRD surfaces.
 
+All routes render a shared top status bar with:
+- Forza target endpoint (IP:port)
+- ingest listener endpoint
+- packet activity status and packet count
+
 - `/`: Setup page (Forza stream IP/port + ingest listener status)
 - `/live`: Live dashboard
 - `/map`: Track map with replay scrub controls and color overlays

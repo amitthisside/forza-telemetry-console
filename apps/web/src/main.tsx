@@ -186,6 +186,66 @@ function readForzaStreamConfig(): ForzaStreamConfig {
   }
 }
 
+function useIngressMonitor() {
+  const ingestApiBase = (
+    (import.meta.env.VITE_INGEST_API_BASE_URL as string | undefined) ?? 'http://localhost:8100'
+  ).replace(/\/$/, '');
+  const [config, setConfig] = useState<ForzaStreamConfig>(readForzaStreamConfig);
+  const [stats, setStats] = useState<IngestStats | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [lastPacketAt, setLastPacketAt] = useState<number | null>(null);
+  const previousPackets = useRef(0);
+
+  useEffect(() => {
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === FORZA_STREAM_CONFIG_KEY) {
+        setConfig(readForzaStreamConfig());
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function pollStats() {
+      try {
+        const response = await fetch(`${ingestApiBase}/api/v1/ingest/stats`);
+        if (!response.ok) {
+          throw new Error(`ingest stats request failed: ${response.status}`);
+        }
+        const payload = (await response.json()) as IngestStats;
+        if (cancelled) {
+          return;
+        }
+        if (payload.packets_received > previousPackets.current) {
+          setLastPacketAt(Date.now());
+        }
+        previousPackets.current = payload.packets_received;
+        setStats(payload);
+        setError(null);
+      } catch (err) {
+        if (!cancelled) {
+          setError((err as Error).message);
+        }
+      }
+    }
+    void pollStats();
+    const intervalId = window.setInterval(() => {
+      void pollStats();
+    }, 2000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [ingestApiBase]);
+
+  const packetsActive =
+    stats?.udp_enabled === true && lastPacketAt !== null && Date.now() - lastPacketAt <= 5000;
+
+  return { config, stats, error, packetsActive };
+}
+
 function useTelemetryStream() {
   const [connected, setConnected] = useState(false);
   const [frame, setFrame] = useState<TelemetryFrame>(emptyFrame);
@@ -483,61 +543,60 @@ function Sidebar() {
   );
 }
 
-function SetupView() {
-  const ingestApiBase = (
-    (import.meta.env.VITE_INGEST_API_BASE_URL as string | undefined) ?? 'http://localhost:8100'
-  ).replace(/\/$/, '');
-  const [config, setConfig] = useState<ForzaStreamConfig>(readForzaStreamConfig);
-  const [ingestStats, setIngestStats] = useState<IngestStats | null>(null);
+function IngressTopBar({
+  config,
+  stats,
+  error,
+  packetsActive
+}: {
+  config: ForzaStreamConfig;
+  stats: IngestStats | null;
+  error: string | null;
+  packetsActive: boolean;
+}) {
+  const statusText =
+    error !== null ? 'Ingest API unreachable' : packetsActive ? 'Packets streaming' : 'No packets';
+  return (
+    <div className="ingress-topbar">
+      <div className="endpoint-row">
+        <span className={`status-dot ${packetsActive ? 'ok' : 'bad'}`} />
+        <strong>
+          Forza target: {config.targetIp}:{config.targetPort}
+        </strong>
+      </div>
+      <span>
+        Listener: {stats?.bind_host ?? '...'}:{stats?.bind_port ?? '...'}
+      </span>
+      <span>Status: {statusText}</span>
+      <span>Packets: {stats?.packets_received ?? 0}</span>
+    </div>
+  );
+}
+
+function SetupView({
+  config,
+  ingestStats,
+  packetsActive,
+  error
+}: {
+  config: ForzaStreamConfig;
+  ingestStats: IngestStats | null;
+  packetsActive: boolean;
+  error: string | null;
+}) {
+  const [localConfig, setLocalConfig] = useState<ForzaStreamConfig>(config);
   const [saved, setSaved] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [lastPacketAt, setLastPacketAt] = useState<number | null>(null);
-  const previousPackets = useRef<number>(0);
 
   useEffect(() => {
-    let cancelled = false;
-    async function loadIngestStats() {
-      try {
-        const response = await fetch(`${ingestApiBase}/api/v1/ingest/stats`);
-        if (!response.ok) {
-          throw new Error('ingest stats request failed');
-        }
-        const payload = (await response.json()) as IngestStats;
-        if (!cancelled) {
-          if (payload.packets_received > previousPackets.current) {
-            setLastPacketAt(Date.now());
-          }
-          previousPackets.current = payload.packets_received;
-          setIngestStats(payload);
-          setError(null);
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setError((err as Error).message);
-        }
-      }
-    }
-    void loadIngestStats();
-    const intervalId = window.setInterval(() => {
-      void loadIngestStats();
-    }, 2000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(intervalId);
-    };
-  }, [ingestApiBase]);
+    setLocalConfig(config);
+  }, [config]);
 
   const onSave = (event: React.FormEvent) => {
     event.preventDefault();
-    window.localStorage.setItem(FORZA_STREAM_CONFIG_KEY, JSON.stringify(config));
+    window.localStorage.setItem(FORZA_STREAM_CONFIG_KEY, JSON.stringify(localConfig));
     setSaved(true);
     window.setTimeout(() => setSaved(false), 1200);
   };
-
-  const packetsActive =
-    ingestStats?.udp_enabled === true &&
-    lastPacketAt !== null &&
-    Date.now() - lastPacketAt <= 5000;
   const packetStatusText =
     error !== null
       ? 'Ingest API unreachable'
@@ -553,7 +612,7 @@ function SetupView() {
           <div className="endpoint-row">
             <span className={`status-dot ${packetsActive ? 'ok' : 'bad'}`} />
             <strong>
-              {config.targetIp}:{config.targetPort}
+              {localConfig.targetIp}:{localConfig.targetPort}
             </strong>
           </div>
           <p className="endpoint-help">{packetStatusText}</p>
@@ -566,8 +625,10 @@ function SetupView() {
               Data Stream IP (set this in Forza)
               <input
                 className="setup-input"
-                value={config.targetIp}
-                onChange={(e) => setConfig((prev) => ({ ...prev, targetIp: e.target.value }))}
+                value={localConfig.targetIp}
+                onChange={(e) =>
+                  setLocalConfig((prev) => ({ ...prev, targetIp: e.target.value }))
+                }
                 placeholder="192.168.1.10"
               />
             </label>
@@ -578,9 +639,12 @@ function SetupView() {
                 type="number"
                 min={1}
                 max={65535}
-                value={config.targetPort}
+                value={localConfig.targetPort}
                 onChange={(e) =>
-                  setConfig((prev) => ({ ...prev, targetPort: Number(e.target.value) || 8443 }))
+                  setLocalConfig((prev) => ({
+                    ...prev,
+                    targetPort: Number(e.target.value) || 8443
+                  }))
                 }
               />
             </label>
@@ -1173,6 +1237,7 @@ function Card({ title, children }: { title: string; children: React.ReactNode })
 
 function App() {
   const { connected, frame } = useTelemetryStream();
+  const ingress = useIngressMonitor();
   const frameMemo = useMemo(() => frame, [frame]);
 
   return (
@@ -1180,8 +1245,24 @@ function App() {
       <div className="layout">
         <Sidebar />
         <main className="content">
+          <IngressTopBar
+            config={ingress.config}
+            stats={ingress.stats}
+            error={ingress.error}
+            packetsActive={ingress.packetsActive}
+          />
           <Routes>
-            <Route path="/" element={<SetupView />} />
+            <Route
+              path="/"
+              element={
+                <SetupView
+                  config={ingress.config}
+                  ingestStats={ingress.stats}
+                  packetsActive={ingress.packetsActive}
+                  error={ingress.error}
+                />
+              }
+            />
             <Route path="/live" element={<LiveView frame={frameMemo} connected={connected} />} />
             <Route path="/map" element={<MapView frame={frameMemo} />} />
             <Route path="/analysis" element={<AnalysisView />} />
