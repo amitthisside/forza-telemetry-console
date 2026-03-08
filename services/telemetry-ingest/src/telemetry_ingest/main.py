@@ -5,6 +5,7 @@ from typing import Final
 
 from event_contracts import TelemetryFrameEvent
 from fastapi import APIRouter, FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from forza_parser import SUPPORTED_PACKET_SIZES
 from pydantic import BaseModel, ConfigDict, Field
@@ -59,6 +60,13 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="telemetry-ingest", version="0.1.0", lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 api = APIRouter(prefix="/api/v1")
 
 

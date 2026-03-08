@@ -24,3 +24,13 @@ def test_ingest_stats_contract() -> None:
     response = client.get("/api/v1/ingest/stats")
     assert response.status_code == 200
     assert response.json()["packets_received"] >= 0
+
+
+def test_ingest_stats_allows_browser_cors() -> None:
+    client = TestClient(app)
+    response = client.get(
+        "/api/v1/ingest/stats",
+        headers={"Origin": "http://localhost:3000"},
+    )
+    assert response.status_code == 200
+    assert response.headers.get("access-control-allow-origin") == "*"
