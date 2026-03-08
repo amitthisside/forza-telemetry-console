@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import ReactDOM from 'react-dom/client';
 import {
   BrowserRouter,
@@ -99,6 +99,7 @@ type IngestStats = {
   bind_host: string;
   bind_port: number;
   udp_enabled: boolean;
+  packets_received: number;
 };
 
 const emptyFrame: TelemetryFrame = {
@@ -120,7 +121,7 @@ const defaultOverlayConfig: OverlayConfig = {
 };
 
 const defaultForzaStreamConfig: ForzaStreamConfig = {
-  targetIp: '127.0.0.1',
+  targetIp: '192.168.1.9',
   targetPort: 8443
 };
 
@@ -490,6 +491,8 @@ function SetupView() {
   const [ingestStats, setIngestStats] = useState<IngestStats | null>(null);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lastPacketAt, setLastPacketAt] = useState<number | null>(null);
+  const previousPackets = useRef<number>(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -501,7 +504,12 @@ function SetupView() {
         }
         const payload = (await response.json()) as IngestStats;
         if (!cancelled) {
+          if (payload.packets_received > previousPackets.current) {
+            setLastPacketAt(Date.now());
+          }
+          previousPackets.current = payload.packets_received;
           setIngestStats(payload);
+          setError(null);
         }
       } catch (err) {
         if (!cancelled) {
@@ -510,8 +518,12 @@ function SetupView() {
       }
     }
     void loadIngestStats();
+    const intervalId = window.setInterval(() => {
+      void loadIngestStats();
+    }, 2000);
     return () => {
       cancelled = true;
+      window.clearInterval(intervalId);
     };
   }, [ingestApiBase]);
 
@@ -522,9 +534,31 @@ function SetupView() {
     window.setTimeout(() => setSaved(false), 1200);
   };
 
+  const packetsActive =
+    ingestStats?.udp_enabled === true &&
+    lastPacketAt !== null &&
+    Date.now() - lastPacketAt <= 5000;
+  const packetStatusText =
+    error !== null
+      ? 'Ingest API unreachable'
+      : packetsActive
+        ? 'Receiving UDP packets'
+        : 'No recent UDP packets';
+
   return (
     <section>
       <h1>Setup</h1>
+      <div className="row">
+        <Card title="Current Stream Endpoint">
+          <div className="endpoint-row">
+            <span className={`status-dot ${packetsActive ? 'ok' : 'bad'}`} />
+            <strong>
+              {config.targetIp}:{config.targetPort}
+            </strong>
+          </div>
+          <p className="endpoint-help">{packetStatusText}</p>
+        </Card>
+      </div>
       <div className="row">
         <Card title="Forza Data Stream Target">
           <form onSubmit={onSave} className="setup-form">
@@ -563,6 +597,14 @@ function SetupView() {
             </li>
             <li>
               Port: <strong>{ingestStats?.bind_port ?? 'loading...'}</strong>
+            </li>
+            <li>
+              Packets received: <strong>{ingestStats?.packets_received ?? 0}</strong>
+            </li>
+            <li>Activity indicator updates every 2s</li>
+            <li>
+              Note: `0.0.0.0` means listener is bound to all interfaces; Forza should target your
+              machine LAN IP above.
             </li>
             <li>Config source: `.env` with `INGEST_BIND_HOST` and `INGEST_BIND_PORT`</li>
           </ul>

@@ -209,6 +209,34 @@ a {
   padding: 8px 10px;
 }
 
+.endpoint-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.endpoint-help {
+  margin-top: 8px;
+  color: var(--muted);
+}
+
+.status-dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 999px;
+  display: inline-block;
+}
+
+.status-dot.ok {
+  background: #16a34a;
+  box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.2);
+}
+
+.status-dot.bad {
+  background: #b91c1c;
+  box-shadow: 0 0 0 3px rgba(185, 28, 28, 0.2);
+}
+
 @media (max-width: 960px) {
   .layout {
     grid-template-columns: 1fr;
