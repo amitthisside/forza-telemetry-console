@@ -58,10 +58,12 @@
 - Listener host/port for this machine are controlled by:
   - `INGEST_BIND_HOST` (default `0.0.0.0`)
   - `INGEST_BIND_PORT` (default `8443`)
-- When running via `docker compose`, UDP port mapping follows `INGEST_BIND_PORT` from `.env`.
+- When running via `docker compose`:
+  - ingest binds inside container on `0.0.0.0` (required for container networking)
+  - UDP port mapping follows `INGEST_BIND_PORT` from `.env`
 - After changing these values, run `make down && make up` to recreate the ingest container/port mapping.
 - The web setup page (`/`) stores Forza target IP/port in browser localStorage key:
-`  - `forza.stream.config.v1`
+  - `forza.stream.config.v1`
 - Setup page health indicator logic:
   - green: `packets_received` counter is increasing (polled every 2s)
   - red: no recent increase or ingest API unreachable
