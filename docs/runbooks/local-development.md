@@ -28,6 +28,7 @@
    - `http://localhost:8103/api/v1/history/summary`
 8. Open frontend routes:
    - `http://localhost:3000/`
+   - `http://localhost:3000/live`
    - `http://localhost:3000/map`
    - `http://localhost:3000/analysis`
    - `http://localhost:3000/coaching`
@@ -51,3 +52,11 @@
   - `analytics_rule_evaluation_errors_total`
 - If haptics/adapter dispatch fails, inspect `http://localhost:8104/metrics`:
   - `device_gateway_adapter_failures_total`
+
+## Forza Stream Configuration
+
+- Listener host/port for this machine are controlled by:
+  - `INGEST_BIND_HOST` (default `0.0.0.0`)
+  - `INGEST_BIND_PORT` (default `8443`)
+- The web setup page (`/`) stores Forza target IP/port in browser localStorage key:
+  - `forza.stream.config.v1`

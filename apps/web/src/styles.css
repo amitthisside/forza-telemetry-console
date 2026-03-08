@@ -190,6 +190,25 @@ a {
   font-weight: 600;
 }
 
+.setup-form {
+  display: grid;
+  gap: 10px;
+}
+
+.setup-form label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.setup-input {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 8px 10px;
+}
+
 @media (max-width: 960px) {
   .layout {
     grid-template-columns: 1fr;

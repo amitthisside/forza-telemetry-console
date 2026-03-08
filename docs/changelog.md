@@ -8,3 +8,4 @@
 - added Wave 3 major part: enriched analysis/coaching/diagnostics APIs plus analysis/diagnostics UI integrations
 - added Wave 4 major part: historical analytics summary + overlay config persistence and low-latency overlay feed integration
 - added Wave 5 closeout: operational counters/metrics for boundary detection, replay query performance, rule execution, and adapter dispatch failures
+- added setup landing page (`/`) for Forza data stream IP/port entry and ingest listener visibility
