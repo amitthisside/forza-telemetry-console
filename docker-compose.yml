@@ -19,9 +19,15 @@ services:
     build:
       context: .
       dockerfile: services/telemetry-ingest/Dockerfile
+    environment:
+      INGEST_BIND_HOST: ${INGEST_BIND_HOST:-0.0.0.0}
+      INGEST_BIND_PORT: ${INGEST_BIND_PORT:-8443}
+      INGEST_NATS_ENABLED: ${INGEST_NATS_ENABLED:-true}
+      NATS_URL: ${NATS_URL:-nats://nats:4222}
+      INGEST_SESSION_ID: ${INGEST_SESSION_ID:-local-session}
     ports:
       - "8100:8000"
-      - "5300:5300/udp"
+      - "${INGEST_BIND_PORT:-8443}:${INGEST_BIND_PORT:-8443}/udp"
 
   telemetry-stream:
     build:
